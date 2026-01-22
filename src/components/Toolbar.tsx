@@ -91,32 +91,44 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form) return;
     const xml = buildXML(form);
+    const defaultName = `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
+
+    // Use File System Access API if available (allows choosing location)
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as typeof window & { showSaveFilePicker: (options?: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+          suggestedName: defaultName,
+          types: [{
+            description: 'XML Files',
+            accept: { 'application/xml': ['.xml'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(xml);
+        await writable.close();
+        return;
+      } catch (err) {
+        // User cancelled or API failed, fall through to legacy method
+        if ((err as Error).name === 'AbortError') return;
+      }
+    }
+
+    // Fallback for browsers without File System Access API
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
+    a.download = defaultName;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleSaveAs = async () => {
-    if (!form) return;
-    const defaultName = `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
-    const filename = await showPrompt('Save As', 'Enter filename:', defaultName);
-    if (!filename) return;
-
-    const xml = buildXML(form);
-    const blob = new Blob([xml], { type: 'application/xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename.endsWith('.xml') ? filename : `${filename}.xml`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Save As now uses the same logic as Save
+    await handleSave();
   };
 
   const handleClose = async () => {

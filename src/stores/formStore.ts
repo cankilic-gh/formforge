@@ -13,6 +13,8 @@ import {
   FormDescription,
   FormWarning,
   FormNote,
+  FormIncludeForm,
+  FormRequiredDocument,
   QuestionType,
 } from '@/types/form';
 
@@ -51,6 +53,8 @@ interface FormState {
   addDescription: (parentId: string, text: string) => void;
   addWarning: (parentId: string, text: string) => void;
   addNote: (parentId: string, text: string) => void;
+  addIncludeForm: (parentId: string, formName: string, title: string) => void;
+  addRequiredDoc: (parentId: string, title: string) => void;
 
   updateNode: (nodeId: string, updates: Partial<FormNode>) => void;
   deleteNode: (nodeId: string) => void;
@@ -554,6 +558,59 @@ export const useFormStore = create<FormState>()(
           if (parent && 'children' in parent) {
             (parent.children as FormNode[]).push(newNote);
             set({ form: updatedForm });
+            get().saveToHistory();
+          }
+        },
+
+        addIncludeForm: (parentId, formName, title) => {
+          const form = get().form;
+          if (!form) return;
+
+          // Generate ID first
+          const newIncludeForm: FormIncludeForm = {
+            id: generateId(),
+            nodeType: 'includeform',
+            formName,
+            title,
+            type: 'online',
+            multipleInclude: false,
+            required: true,
+          };
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
+          const parent = findNodeRecursive(updatedForm, parentId);
+
+          if (parent && 'children' in parent) {
+            (parent.children as FormNode[]).push(newIncludeForm);
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(parentId);
+            set({ form: updatedForm, selectedNodeId: newIncludeForm.id, expandedNodes: expanded });
+            get().saveToHistory();
+          }
+        },
+
+        addRequiredDoc: (parentId, title) => {
+          const form = get().form;
+          if (!form) return;
+
+          // Generate ID first
+          const newRequiredDoc: FormRequiredDocument = {
+            id: generateId(),
+            nodeType: 'required-doc',
+            title,
+            preventSubmit: true,
+          };
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
+          const parent = findNodeRecursive(updatedForm, parentId);
+
+          if (parent && 'children' in parent) {
+            (parent.children as FormNode[]).push(newRequiredDoc);
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(parentId);
+            set({ form: updatedForm, selectedNodeId: newRequiredDoc.id, expandedNodes: expanded });
             get().saveToHistory();
           }
         },

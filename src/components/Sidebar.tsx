@@ -46,6 +46,8 @@ export const Sidebar: React.FC = () => {
     addDescription,
     addWarning,
     addNote,
+    addIncludeForm,
+    addRequiredDoc,
   } = useFormStore();
 
   const { showPrompt } = useModal();
@@ -124,6 +126,21 @@ export const Sidebar: React.FC = () => {
     if (!selectedNodeId || !canAddToSelected) return;
     const text = await showPrompt('New Note', 'Enter note text:', '');
     if (text) addNote(selectedNodeId, text);
+  };
+
+  const handleAddIncludeForm = async () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    const formName = await showPrompt('New Include Form', 'Enter form name (e.g., affirmation.xml):', '');
+    if (formName) {
+      const title = await showPrompt('Include Form Title', 'Enter display title:', formName.replace('.xml', ''));
+      if (title) addIncludeForm(selectedNodeId, formName, title);
+    }
+  };
+
+  const handleAddRequiredDoc = async () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    const title = await showPrompt('New Required Document', 'Enter document title:', '');
+    if (title) addRequiredDoc(selectedNodeId, title);
   };
 
   const tools: ToolItem[] = [
@@ -235,16 +252,16 @@ export const Sidebar: React.FC = () => {
       id: 'includeform',
       label: 'Include Form',
       icon: FileInput,
-      color: 'text-cyan-600',
-      action: () => {},
+      color: 'text-indigo-600',
+      action: handleAddIncludeForm,
       disabled: !canAddToSelected,
     },
     {
       id: 'requireddoc',
       label: 'Required Doc',
       icon: FileText,
-      color: 'text-pink-600',
-      action: () => {},
+      color: 'text-orange-600',
+      action: handleAddRequiredDoc,
       disabled: !canAddToSelected,
     },
     {

@@ -10,6 +10,8 @@ import {
   FormSubSection,
   FormOption,
   FormDescription,
+  FormIncludeForm,
+  FormRequiredDocument,
   QUESTION_TYPE_META,
   CONDITION_OPERATORS,
   PROFILE_REFERENCE_FIELDS,
@@ -45,6 +47,8 @@ export const PropertyPanel: React.FC = () => {
       {node.nodeType === 'question' && <QuestionProps node={node as FormQuestion} />}
       {node.nodeType === 'entity' && <EntityProps node={node as FormEntity} />}
       {node.nodeType === 'conditionset' && <ConditionSetProps node={node as FormConditionSet} />}
+      {node.nodeType === 'includeform' && <IncludeFormProps node={node as FormIncludeForm} />}
+      {node.nodeType === 'required-doc' && <RequiredDocProps node={node as FormRequiredDocument} />}
     </div>
   );
 };
@@ -504,6 +508,93 @@ const ConditionSetProps: React.FC<{ node: FormConditionSet }> = ({ node }) => {
       <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
         <p className="text-xs text-amber-700">
           <strong>Tip:</strong> Add questions with trigger values inside this condition set, then add a conditional branch to show content when conditions are met.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// IncludeForm Properties
+const IncludeFormProps: React.FC<{ node: FormIncludeForm }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Form Name" hint="XML file name (e.g., affirmation.xml)">
+        <input
+          type="text"
+          value={node.formName}
+          onChange={(e) => updateNode(node.id, { formName: e.target.value })}
+          className="w-full"
+          placeholder="form_name.xml"
+        />
+      </Field>
+      <Field label="Title" hint="Display title for the form">
+        <input
+          type="text"
+          value={node.title}
+          onChange={(e) => updateNode(node.id, { title: e.target.value })}
+          className="w-full"
+        />
+      </Field>
+      <Field label="Type">
+        <select
+          value={node.type}
+          onChange={(e) => updateNode(node.id, { type: e.target.value })}
+          className="w-full"
+        >
+          <option value="online">Online</option>
+          <option value="offline">Offline</option>
+          <option value="attachment">Attachment</option>
+        </select>
+      </Field>
+      <Field label="Multiple Include">
+        <ToggleSwitch
+          checked={node.multipleInclude}
+          onChange={(checked) => updateNode(node.id, { multipleInclude: checked })}
+        />
+      </Field>
+      <Field label="Required">
+        <ToggleSwitch
+          checked={node.required}
+          onChange={(checked) => updateNode(node.id, { required: checked })}
+        />
+      </Field>
+
+      <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+        <p className="text-xs text-indigo-700">
+          <strong>Include Form</strong> embeds another XML form into this section. The applicant will complete the included form as part of this application.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// RequiredDocument Properties
+const RequiredDocProps: React.FC<{ node: FormRequiredDocument }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Title" hint="Document name shown to applicant">
+        <input
+          type="text"
+          value={node.title}
+          onChange={(e) => updateNode(node.id, { title: e.target.value })}
+          className="w-full"
+          placeholder="e.g., Photo ID, Transcript"
+        />
+      </Field>
+      <Field label="Prevent Submit" hint="Block submission if document is missing">
+        <ToggleSwitch
+          checked={node.preventSubmit}
+          onChange={(checked) => updateNode(node.id, { preventSubmit: checked })}
+        />
+      </Field>
+
+      <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+        <p className="text-xs text-orange-700">
+          <strong>Required Document</strong> prompts the applicant to upload a specific document. If "Prevent Submit" is enabled, the application cannot be submitted without this document.
         </p>
       </div>
     </div>

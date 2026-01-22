@@ -24,6 +24,8 @@ import {
   Copy,
   Plus,
   GripVertical,
+  FileInput,
+  FileCheck,
 } from 'lucide-react';
 
 // Drag state
@@ -79,6 +81,10 @@ const getNodeIcon = (node: FormNode): React.ReactNode => {
     case 'note':
     case 'description':
       return <Info className={`${iconClass} text-slate-500`} />;
+    case 'includeform':
+      return <FileInput className={`${iconClass} text-indigo-600`} />;
+    case 'required-doc':
+      return <FileCheck className={`${iconClass} text-orange-600`} />;
     default:
       return <FileText className={`${iconClass} text-slate-500`} />;
   }
@@ -112,6 +118,10 @@ const getNodeLabel = (node: FormNode): string => {
     case 'note':
     case 'description':
       return (node as { text: string }).text?.substring(0, 40) || node.nodeType;
+    case 'includeform':
+      return (node as { title: string }).title || 'Include Form';
+    case 'required-doc':
+      return (node as { title: string }).title || 'Required Document';
     default:
       return node.nodeType;
   }
@@ -153,10 +163,10 @@ const canAcceptChild = (parentType: string, childType: string): boolean => {
   const rules: Record<string, string[]> = {
     questionnaire: ['section'],
     section: ['subsection'],
-    subsection: ['question', 'entity', 'conditionset', 'description', 'warning', 'note'],
-    entity: ['question', 'entity', 'conditionset', 'description', 'warning', 'note'],
-    conditionset: ['question', 'conditional', 'description', 'warning', 'note'],
-    conditional: ['question', 'entity', 'conditionset', 'description', 'warning', 'note'],
+    subsection: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+    entity: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+    conditionset: ['question', 'conditional', 'description', 'warning', 'note', 'required-doc'],
+    conditional: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
   };
   return rules[parentType]?.includes(childType) || false;
 };
