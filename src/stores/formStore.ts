@@ -329,17 +329,20 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Generate ID first
+          const newSubSection: FormSubSection = {
+            id: generateId(),
+            nodeType: 'subsection',
+            title,
+            showInBarAdmin: false,
+            children: [],
+          };
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
           const section = findNodeRecursive(updatedForm, sectionId) as FormSection | null;
 
           if (section && section.nodeType === 'section') {
-            const newSubSection: FormSubSection = {
-              id: generateId(),
-              nodeType: 'subsection',
-              title,
-              showInBarAdmin: false,
-              children: [],
-            };
             section.children.push(newSubSection);
             set({ form: updatedForm, selectedNodeId: newSubSection.id });
             get().saveToHistory();
@@ -350,11 +353,14 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Create question first (this updates nextId in state)
+          const newQuestion = createDefaultQuestion(type);
+
+          // Now clone from updated state (with correct nextId)
+          const updatedForm = deepClone(get().form!);
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            const newQuestion = createDefaultQuestion(type);
             (parent.children as FormNode[]).push(newQuestion);
             // Auto-expand parent to show the new question
             const expanded = new Set(get().expandedNodes);
@@ -368,20 +374,23 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Create question first (this updates nextId in state)
+          const newQuestion = createDefaultQuestion(type);
+          // Update the description text
+          const desc = newQuestion.children.find(c => c.nodeType === 'description');
+          if (desc && 'text' in desc) {
+            desc.text = text;
+          }
+          // Update format if provided
+          if (format) {
+            newQuestion.format = format;
+          }
+
+          // Now clone from updated state (with correct nextId)
+          const updatedForm = deepClone(get().form!);
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            const newQuestion = createDefaultQuestion(type);
-            // Update the description text
-            const desc = newQuestion.children.find(c => c.nodeType === 'description');
-            if (desc && 'text' in desc) {
-              desc.text = text;
-            }
-            // Update format if provided
-            if (format) {
-              newQuestion.format = format;
-            }
             (parent.children as FormNode[]).push(newQuestion);
             // Auto-expand parent
             const expanded = new Set(get().expandedNodes);
@@ -394,11 +403,14 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Create entity first (this updates nextId in state)
+          const newEntity = createDefaultEntity(title, entityType);
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            const newEntity = createDefaultEntity(title, entityType);
             (parent.children as FormNode[]).push(newEntity);
             // Auto-expand parent
             const expanded = new Set(get().expandedNodes);
@@ -412,11 +424,14 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Create conditionset first (this updates nextId in state)
+          const newConditionSet = createDefaultConditionSet();
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            const newConditionSet = createDefaultConditionSet();
             (parent.children as FormNode[]).push(newConditionSet);
             // Auto-expand parent
             const expanded = new Set(get().expandedNodes);
@@ -430,16 +445,19 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Generate ID first (this updates nextId in state)
+          const newConditional: FormConditional = {
+            id: generateId(),
+            nodeType: 'conditional',
+            condition: 'true',
+            children: [],
+          };
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
           const parent = findNodeRecursive(updatedForm, conditionSetId) as FormConditionSet | null;
 
           if (parent && parent.nodeType === 'conditionset') {
-            const newConditional: FormConditional = {
-              id: generateId(),
-              nodeType: 'conditional',
-              condition: 'true',
-              children: [],
-            };
             parent.children.push(newConditional);
             // Auto-expand parent
             const expanded = new Set(get().expandedNodes);
@@ -453,16 +471,19 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Generate ID first
+          const newOption: FormOption = {
+            id: generateId(),
+            nodeType: 'option',
+            value,
+            text,
+          };
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
           const question = findNodeRecursive(updatedForm, questionId) as FormQuestion | null;
 
           if (question && question.nodeType === 'question') {
-            const newOption: FormOption = {
-              id: generateId(),
-              nodeType: 'option',
-              value,
-              text,
-            };
             question.children.push(newOption);
             set({ form: updatedForm });
             get().saveToHistory();
@@ -473,16 +494,19 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Generate ID first
+          const newDescription: FormDescription = {
+            id: generateId(),
+            nodeType: 'description',
+            prefix: '',
+            text,
+          };
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            const newDescription: FormDescription = {
-              id: generateId(),
-              nodeType: 'description',
-              prefix: '',
-              text,
-            };
             (parent.children as FormNode[]).push(newDescription);
             set({ form: updatedForm });
             get().saveToHistory();
@@ -493,15 +517,18 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Generate ID first
+          const newWarning: FormWarning = {
+            id: generateId(),
+            nodeType: 'warning',
+            text,
+          };
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            const newWarning: FormWarning = {
-              id: generateId(),
-              nodeType: 'warning',
-              text,
-            };
             (parent.children as FormNode[]).push(newWarning);
             set({ form: updatedForm });
             get().saveToHistory();
@@ -512,16 +539,19 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
+          // Generate ID first
+          const newNote: FormNote = {
+            id: generateId(),
+            nodeType: 'note',
+            text,
+            isCheckItem: false,
+          };
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            const newNote: FormNote = {
-              id: generateId(),
-              nodeType: 'note',
-              text,
-              isCheckItem: false,
-            };
             (parent.children as FormNode[]).push(newNote);
             set({ form: updatedForm });
             get().saveToHistory();
