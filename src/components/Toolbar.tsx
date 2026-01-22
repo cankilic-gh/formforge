@@ -21,10 +21,15 @@ import {
   Save,
   Eye,
   EyeOff,
+  Wand2,
 } from 'lucide-react';
 import { useRef } from 'react';
 
-export const Toolbar: React.FC = () => {
+interface ToolbarProps {
+  onGenerateClick?: () => void;
+}
+
+export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   const {
     form,
     setForm,
@@ -195,6 +200,18 @@ export const Toolbar: React.FC = () => {
           <ToolbarButton icon={Hash} label="Regenerate Id's" onClick={handleRegenerateIds} disabled={!form} />
         </ToolbarGroup>
 
+        <div className="w-px h-6 bg-white/10 mx-1" />
+
+        {/* Tools */}
+        <ToolbarGroup label="Tools">
+          <ToolbarButton
+            icon={Wand2}
+            label="Generate"
+            onClick={onGenerateClick || (() => {})}
+            disabled={!form}
+          />
+        </ToolbarGroup>
+
         {/* Spacer */}
         <div className="flex-1" />
 
@@ -224,8 +241,8 @@ export const Toolbar: React.FC = () => {
       <div className="h-5 flex items-center px-2 text-[10px] text-gray-600 border-t border-white/5 bg-black/20">
         <div className="w-[140px]" /> {/* Logo space */}
         <span className="px-2">File Management</span>
-        <div className="flex-1" />
-        <span className="px-2">Edit</span>
+        <span className="px-8">Edit</span>
+        <span className="px-2 text-forge-cyan">Tools</span>
         <div className="flex-1" />
         <span className="px-2">View</span>
       </div>

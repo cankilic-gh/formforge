@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useFormStore } from '@/stores/formStore';
 import { Sidebar } from '@/components/Sidebar';
 import { FormTree } from '@/components/FormTree';
@@ -7,13 +8,16 @@ import { PropertyPanel } from '@/components/PropertyPanel';
 import { Toolbar } from '@/components/Toolbar';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { FormPreview } from '@/components/FormPreview';
+import { SmartFormGenerator } from '@/components/SmartFormGenerator';
 
 export default function Home() {
   const { form, isPreviewing } = useFormStore();
+  const [showGenerator, setShowGenerator] = useState(false);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <Toolbar />
+      <Toolbar onGenerateClick={() => setShowGenerator(true)} />
+      <SmartFormGenerator isOpen={showGenerator} onClose={() => setShowGenerator(false)} />
 
       <div className="flex-1 flex overflow-hidden">
         <Sidebar />

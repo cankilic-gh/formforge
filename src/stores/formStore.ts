@@ -43,6 +43,7 @@ interface FormState {
   addSection: (title: string) => void;
   addSubSection: (sectionId: string, title: string) => void;
   addQuestion: (parentId: string, type: QuestionType) => void;
+  addQuestionWithText: (parentId: string, type: QuestionType, text: string, format?: string) => void;
   addEntity: (parentId: string, title: string, entityType: 'single' | 'addmore') => void;
   addConditionSet: (parentId: string) => void;
   addConditional: (conditionSetId: string) => void;
@@ -356,6 +357,29 @@ export const useFormStore = create<FormState>()(
             (parent.children as FormNode[]).push(newQuestion);
             set({ form: updatedForm, selectedNodeId: newQuestion.id });
             get().saveToHistory();
+          }
+        },
+
+        addQuestionWithText: (parentId, type, text, format) => {
+          const form = get().form;
+          if (!form) return;
+
+          const updatedForm = deepClone(form);
+          const parent = findNodeRecursive(updatedForm, parentId);
+
+          if (parent && 'children' in parent) {
+            const newQuestion = createDefaultQuestion(type);
+            // Update the description text
+            const desc = newQuestion.children.find(c => c.nodeType === 'description');
+            if (desc && 'text' in desc) {
+              desc.text = text;
+            }
+            // Update format if provided
+            if (format) {
+              newQuestion.format = format;
+            }
+            (parent.children as FormNode[]).push(newQuestion);
+            set({ form: updatedForm });
           }
         },
 
