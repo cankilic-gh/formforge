@@ -15,7 +15,9 @@ import {
   FormNote,
   FormIncludeForm,
   FormRequiredDocument,
+  FormReference,
   QuestionType,
+  ProfileReferenceField,
 } from '@/types/form';
 
 interface FormState {
@@ -56,6 +58,7 @@ interface FormState {
   addIncludeForm: (parentId: string, formName: string, title: string) => void;
   addRequiredDoc: (parentId: string, title: string) => void;
   addAddressSet: (parentId: string) => void;
+  addReference: (questionId: string, field: ProfileReferenceField) => void;
 
   updateNode: (nodeId: string, updates: Partial<FormNode>) => void;
   deleteNode: (nodeId: string) => void;
@@ -669,6 +672,36 @@ export const useFormStore = create<FormState>()(
             const expanded = new Set(get().expandedNodes);
             expanded.add(parentId);
             set({ form: updatedForm, selectedNodeId: addressFields[0].id, expandedNodes: expanded });
+            get().saveToHistory();
+          }
+        },
+
+        addReference: (questionId, field) => {
+          const form = get().form;
+          if (!form) return;
+
+          // Generate ID first
+          const newReference: FormReference = {
+            id: generateId(),
+            nodeType: 'reference',
+            table: 'profile',
+            field,
+          };
+
+          // Clone form
+          const updatedForm = deepClone(get().form!);
+          const question = findNodeRecursive(updatedForm, questionId) as FormQuestion | null;
+
+          if (question && question.nodeType === 'question') {
+            // Change question type to profilereference
+            question.type = 'profilereference';
+            // Remove existing references and add new one
+            question.children = question.children.filter(c => c.nodeType !== 'reference');
+            question.children.push(newReference);
+
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(questionId);
+            set({ form: updatedForm, selectedNodeId: questionId, expandedNodes: expanded });
             get().saveToHistory();
           }
         },

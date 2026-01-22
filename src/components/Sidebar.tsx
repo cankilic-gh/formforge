@@ -2,6 +2,7 @@
 
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
+import { PROFILE_REFERENCE_FIELDS, ProfileReferenceField } from '@/types/form';
 import {
   FolderOpen,
   Folder,
@@ -49,9 +50,10 @@ export const Sidebar: React.FC = () => {
     addIncludeForm,
     addRequiredDoc,
     addAddressSet,
+    addReference,
   } = useFormStore();
 
-  const { showPrompt } = useModal();
+  const { showPrompt, showSelect } = useModal();
 
   const selectedNode = selectedNodeId ? findNodeById(selectedNodeId) : null;
   const selectedNodeType = selectedNode?.nodeType;
@@ -142,6 +144,19 @@ export const Sidebar: React.FC = () => {
     if (!selectedNodeId || !canAddToSelected) return;
     const title = await showPrompt('New Required Document', 'Enter document title:', '');
     if (title) addRequiredDoc(selectedNodeId, title);
+  };
+
+  const handleAddReference = async () => {
+    if (!selectedNodeId || selectedNodeType !== 'question') return;
+    const options = PROFILE_REFERENCE_FIELDS.map(f => ({
+      value: f.value,
+      label: f.label,
+      category: f.category,
+    }));
+    const field = await showSelect('Add Reference', 'Select which profile field to reference:', options, 'fullname');
+    if (field) {
+      addReference(selectedNodeId, field as ProfileReferenceField);
+    }
   };
 
   const tools: ToolItem[] = [
@@ -278,7 +293,7 @@ export const Sidebar: React.FC = () => {
       label: 'Reference',
       icon: Link,
       color: 'text-sky-600',
-      action: () => {},
+      action: handleAddReference,
       disabled: selectedNodeType !== 'question',
     },
     {

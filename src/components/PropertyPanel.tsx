@@ -134,6 +134,7 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
   const typeMeta = QUESTION_TYPE_META.find((t) => t.type === node.type);
   const description = node.children.find((c) => c.nodeType === 'description') as FormDescription | undefined;
   const options = node.children.filter((c) => c.nodeType === 'option') as FormOption[];
+  const reference = node.children.find((c) => c.nodeType === 'reference') as { field?: string } | undefined;
 
   const updateDescription = (text: string) => {
     const newChildren = node.children.map((c) =>
@@ -148,6 +149,29 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
     ) as FormQuestion['children'];
     updateNode(node.id, { children: newChildren } as Partial<FormQuestion>);
   };
+
+  const updateReferenceField = (field: string) => {
+    // If reference child exists, update it; otherwise create one
+    const hasReference = node.children.some((c) => c.nodeType === 'reference');
+    if (hasReference) {
+      const newChildren = node.children.map((c) =>
+        c.nodeType === 'reference' ? { ...c, field } : c
+      ) as FormQuestion['children'];
+      updateNode(node.id, { children: newChildren } as Partial<FormQuestion>);
+    } else {
+      const newReference = {
+        id: generateId(),
+        nodeType: 'reference' as const,
+        table: 'profile',
+        field,
+      };
+      const newChildren = [...node.children, newReference] as FormQuestion['children'];
+      updateNode(node.id, { children: newChildren } as Partial<FormQuestion>);
+    }
+  };
+
+  // Get reference field value - prefer child reference, fall back to format
+  const referenceFieldValue = reference?.field || node.format || '';
 
   const addOption = () => {
     const newOption: FormOption = {
@@ -228,10 +252,10 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
 
       {/* Profile Reference Field (grouped dropdown) */}
       {node.type === 'profilereference' && (
-        <Field label="Reference Field">
+        <Field label="Reference Field" hint="Profile data to auto-fill">
           <select
-            value={node.format}
-            onChange={(e) => updateNode(node.id, { format: e.target.value })}
+            value={referenceFieldValue}
+            onChange={(e) => updateReferenceField(e.target.value)}
             className="w-full"
           >
             <option value="">Select a field...</option>

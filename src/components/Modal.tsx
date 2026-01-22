@@ -1,9 +1,15 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { X, AlertCircle, HelpCircle, Edit3 } from 'lucide-react';
+import { X, AlertCircle, HelpCircle, Edit3, List } from 'lucide-react';
 
-type ModalType = 'alert' | 'confirm' | 'prompt';
+type ModalType = 'alert' | 'confirm' | 'prompt' | 'select';
+
+interface SelectOption {
+  value: string;
+  label: string;
+  category?: string;
+}
 
 interface ModalState {
   isOpen: boolean;
@@ -12,6 +18,7 @@ interface ModalState {
   message: string;
   defaultValue?: string;
   placeholder?: string;
+  options?: SelectOption[];
   onConfirm?: (value?: string) => void;
   onCancel?: () => void;
 }
@@ -20,6 +27,7 @@ interface ModalContextType {
   showAlert: (title: string, message: string) => Promise<void>;
   showConfirm: (title: string, message: string) => Promise<boolean>;
   showPrompt: (title: string, message: string, defaultValue?: string, placeholder?: string) => Promise<string | null>;
+  showSelect: (title: string, message: string, options: SelectOption[], defaultValue?: string) => Promise<string | null>;
 }
 
 const ModalContext = createContext<ModalContextType | null>(null);
@@ -102,8 +110,30 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
   }, [closeModal]);
 
+  const showSelect = useCallback((title: string, message: string, options: SelectOption[], defaultValue = ''): Promise<string | null> => {
+    setInputValue(defaultValue || options[0]?.value || '');
+    return new Promise((resolve) => {
+      setModal({
+        isOpen: true,
+        type: 'select',
+        title,
+        message,
+        options,
+        defaultValue,
+        onConfirm: (value) => {
+          closeModal();
+          resolve(value || null);
+        },
+        onCancel: () => {
+          closeModal();
+          resolve(null);
+        },
+      });
+    });
+  }, [closeModal]);
+
   const handleConfirm = () => {
-    if (modal.type === 'prompt') {
+    if (modal.type === 'prompt' || modal.type === 'select') {
       modal.onConfirm?.(inputValue);
     } else {
       modal.onConfirm?.();
@@ -133,12 +163,14 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       case 'confirm':
         return <HelpCircle className="w-6 h-6 text-blue-500" />;
       case 'prompt':
-        return <Edit3 className="w-6 h-6 text-forge-cyan" />;
+        return <Edit3 className="w-6 h-6 text-cyan-500" />;
+      case 'select':
+        return <List className="w-6 h-6 text-indigo-500" />;
     }
   };
 
   return (
-    <ModalContext.Provider value={{ showAlert, showConfirm, showPrompt }}>
+    <ModalContext.Provider value={{ showAlert, showConfirm, showPrompt, showSelect }}>
       {children}
 
       {/* Modal Overlay */}
@@ -178,6 +210,41 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   autoFocus
                   onKeyDown={handleKeyDown}
                 />
+              )}
+
+              {modal.type === 'select' && modal.options && (
+                <select
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  className="mt-4 w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                  autoFocus
+                >
+                  {/* Group options by category if present */}
+                  {modal.options.some(o => o.category) ? (
+                    Object.entries(
+                      modal.options.reduce((acc, opt) => {
+                        const cat = opt.category || 'Other';
+                        if (!acc[cat]) acc[cat] = [];
+                        acc[cat].push(opt);
+                        return acc;
+                      }, {} as Record<string, SelectOption[]>)
+                    ).map(([category, opts]) => (
+                      <optgroup key={category} label={category}>
+                        {opts.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))
+                  ) : (
+                    modal.options.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))
+                  )}
+                </select>
               )}
             </div>
 
