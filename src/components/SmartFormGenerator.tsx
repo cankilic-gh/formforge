@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useFormStore } from '@/stores/formStore';
+import { useModal } from '@/components/Modal';
 import { X, Wand2, FileText, Upload } from 'lucide-react';
 import { QuestionType } from '@/types/form';
 
@@ -133,6 +134,7 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
   const [detectedFields, setDetectedFields] = useState<DetectedField[]>([]);
   const [step, setStep] = useState<'input' | 'review'>('input');
   const { form, selectedNodeId, findNodeById, addQuestionWithText, saveToHistory } = useFormStore();
+  const { showAlert } = useModal();
 
   const handleAnalyze = () => {
     const fields = detectFields(inputText);
@@ -140,15 +142,15 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
     setStep('review');
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!form || !selectedNodeId) {
-      alert('Please select a subsection or entity first');
+      await showAlert('Selection Required', 'Please select a subsection or entity first.');
       return;
     }
 
     const parent = findNodeById(selectedNodeId);
     if (!parent || !['subsection', 'entity', 'conditional'].includes(parent.nodeType)) {
-      alert('Please select a subsection, entity, or conditional to add questions');
+      await showAlert('Invalid Selection', 'Please select a subsection, entity, or conditional to add questions.');
       return;
     }
 
