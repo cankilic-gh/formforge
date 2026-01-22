@@ -2,7 +2,12 @@
 
 import { ReactNode } from 'react';
 import { ModalProvider } from './Modal';
+import { AuthGuard } from './AuthGuard';
 
 export const Providers: React.FC<{ children: ReactNode }> = ({ children }) => {
-  return <ModalProvider>{children}</ModalProvider>;
+  return (
+    <AuthGuard>
+      <ModalProvider>{children}</ModalProvider>
+    </AuthGuard>
+  );
 };
