@@ -40,6 +40,11 @@ export const Sidebar: React.FC = () => {
     addQuestion,
     addEntity,
     addConditionSet,
+    addConditional,
+    addOption,
+    addDescription,
+    addWarning,
+    addNote,
   } = useFormStore();
 
   const selectedNode = selectedNodeId ? findNodeById(selectedNodeId) : null;
@@ -81,6 +86,40 @@ export const Sidebar: React.FC = () => {
   const handleAddConditionSet = () => {
     if (!selectedNodeId || !canAddToSelected) return;
     addConditionSet(selectedNodeId);
+  };
+
+  const handleAddConditional = () => {
+    if (!selectedNodeId || selectedNodeType !== 'conditionset') return;
+    addConditional(selectedNodeId);
+  };
+
+  const handleAddOption = () => {
+    if (!selectedNodeId || selectedNodeType !== 'question') return;
+    const selectedQuestion = selectedNode as { type?: string };
+    if (!['radio', 'radioseperate', 'select'].includes(selectedQuestion.type || '')) return;
+    const text = prompt('Option text:', 'New Option');
+    if (text) {
+      const value = text.toLowerCase().replace(/\s+/g, '_');
+      addOption(selectedNodeId, value, text);
+    }
+  };
+
+  const handleAddDescription = () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    const text = prompt('Description text:', '');
+    if (text) addDescription(selectedNodeId, text);
+  };
+
+  const handleAddWarning = () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    const text = prompt('Warning text:', '');
+    if (text) addWarning(selectedNodeId, text);
+  };
+
+  const handleAddNote = () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    const text = prompt('Note text:', '');
+    if (text) addNote(selectedNodeId, text);
   };
 
   const tools: ToolItem[] = [
@@ -129,7 +168,7 @@ export const Sidebar: React.FC = () => {
       label: 'Conditional',
       icon: GitMerge,
       color: 'text-yellow-500',
-      action: () => {}, // TODO: Add conditional to conditionset
+      action: handleAddConditional,
       disabled: selectedNodeType !== 'conditionset',
     },
     {
@@ -145,15 +184,15 @@ export const Sidebar: React.FC = () => {
       label: 'Option',
       icon: CheckSquare,
       color: 'text-blue-300',
-      action: () => {}, // TODO: Add option to question
-      disabled: selectedNodeType !== 'question',
+      action: handleAddOption,
+      disabled: selectedNodeType !== 'question' || !['radio', 'radioseperate', 'select'].includes((selectedNode as { type?: string })?.type || ''),
     },
     {
       id: 'description',
       label: 'Description',
       icon: MessageSquare,
       color: 'text-gray-400',
-      action: () => {}, // TODO: Add description
+      action: handleAddDescription,
       disabled: !canAddToSelected,
     },
     {
@@ -161,7 +200,7 @@ export const Sidebar: React.FC = () => {
       label: 'Simple Text',
       icon: Type,
       color: 'text-gray-500',
-      action: () => {},
+      action: handleAddDescription,
       disabled: !canAddToSelected,
     },
     {
@@ -169,7 +208,7 @@ export const Sidebar: React.FC = () => {
       label: 'Warning',
       icon: AlertTriangle,
       color: 'text-red-400',
-      action: () => {},
+      action: handleAddWarning,
       disabled: !canAddToSelected,
     },
     {
@@ -177,7 +216,7 @@ export const Sidebar: React.FC = () => {
       label: 'Note',
       icon: StickyNote,
       color: 'text-orange-400',
-      action: () => {},
+      action: handleAddNote,
       disabled: !canAddToSelected,
     },
     {

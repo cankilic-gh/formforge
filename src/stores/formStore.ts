@@ -8,6 +8,11 @@ import {
   FormQuestion,
   FormEntity,
   FormConditionSet,
+  FormConditional,
+  FormOption,
+  FormDescription,
+  FormWarning,
+  FormNote,
   QuestionType,
 } from '@/types/form';
 
@@ -40,6 +45,11 @@ interface FormState {
   addQuestion: (parentId: string, type: QuestionType) => void;
   addEntity: (parentId: string, title: string, entityType: 'single' | 'addmore') => void;
   addConditionSet: (parentId: string) => void;
+  addConditional: (conditionSetId: string) => void;
+  addOption: (questionId: string, value: string, text: string) => void;
+  addDescription: (parentId: string, text: string) => void;
+  addWarning: (parentId: string, text: string) => void;
+  addNote: (parentId: string, text: string) => void;
 
   updateNode: (nodeId: string, updates: Partial<FormNode>) => void;
   deleteNode: (nodeId: string) => void;
@@ -325,6 +335,105 @@ export const useFormStore = create<FormState>()(
           const newConditionSet = createDefaultConditionSet();
           (parent.children as FormNode[]).push(newConditionSet);
           set({ form: updatedForm, selectedNodeId: newConditionSet.id });
+          get().saveToHistory();
+        }
+      },
+
+      addConditional: (conditionSetId) => {
+        const form = get().form;
+        if (!form) return;
+
+        const updatedForm = deepClone(form);
+        const parent = findNodeRecursive(updatedForm, conditionSetId) as FormConditionSet | null;
+
+        if (parent && parent.nodeType === 'conditionset') {
+          const newConditional: FormConditional = {
+            id: generateId(),
+            nodeType: 'conditional',
+            condition: 'true',
+            children: [],
+          };
+          parent.children.push(newConditional);
+          set({ form: updatedForm, selectedNodeId: newConditional.id });
+          get().saveToHistory();
+        }
+      },
+
+      addOption: (questionId, value, text) => {
+        const form = get().form;
+        if (!form) return;
+
+        const updatedForm = deepClone(form);
+        const question = findNodeRecursive(updatedForm, questionId) as FormQuestion | null;
+
+        if (question && question.nodeType === 'question') {
+          const newOption: FormOption = {
+            id: generateId(),
+            nodeType: 'option',
+            value,
+            text,
+          };
+          question.children.push(newOption);
+          set({ form: updatedForm });
+          get().saveToHistory();
+        }
+      },
+
+      addDescription: (parentId, text) => {
+        const form = get().form;
+        if (!form) return;
+
+        const updatedForm = deepClone(form);
+        const parent = findNodeRecursive(updatedForm, parentId);
+
+        if (parent && 'children' in parent) {
+          const newDescription: FormDescription = {
+            id: generateId(),
+            nodeType: 'description',
+            prefix: '',
+            text,
+          };
+          (parent.children as FormNode[]).push(newDescription);
+          set({ form: updatedForm });
+          get().saveToHistory();
+        }
+      },
+
+      addWarning: (parentId, text) => {
+        const form = get().form;
+        if (!form) return;
+
+        const updatedForm = deepClone(form);
+        const parent = findNodeRecursive(updatedForm, parentId);
+
+        if (parent && 'children' in parent) {
+          const newWarning: FormWarning = {
+            id: generateId(),
+            nodeType: 'warning',
+            text,
+          };
+          (parent.children as FormNode[]).push(newWarning);
+          set({ form: updatedForm });
+          get().saveToHistory();
+        }
+      },
+
+      addNote: (parentId, text) => {
+        const form = get().form;
+        if (!form) return;
+
+        const updatedForm = deepClone(form);
+        const parent = findNodeRecursive(updatedForm, parentId);
+
+        if (parent && 'children' in parent) {
+          const newNote: FormNote = {
+            id: generateId(),
+            nodeType: 'note',
+            text,
+            isCheckItem: false,
+          };
+          (parent.children as FormNode[]).push(newNote);
+          set({ form: updatedForm });
           get().saveToHistory();
         }
       },
