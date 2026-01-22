@@ -19,6 +19,8 @@ import {
   Moon,
   Hammer,
   Save,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useRef } from 'react';
 
@@ -34,6 +36,8 @@ export const Toolbar: React.FC = () => {
     deleteNode,
     duplicateNode,
     findNodeById,
+    isPreviewing,
+    togglePreview,
   } = useFormStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -196,6 +200,13 @@ export const Toolbar: React.FC = () => {
 
         {/* View */}
         <ToolbarGroup label="View">
+          <ToolbarButton
+            icon={isPreviewing ? EyeOff : Eye}
+            label={isPreviewing ? 'Editor' : 'Preview'}
+            onClick={togglePreview}
+            disabled={!form}
+            active={isPreviewing}
+          />
           <ToolbarButton icon={Settings} label="Settings" onClick={() => {}} />
           <ToolbarButton icon={Moon} label="Dark Mode" onClick={() => {}} active />
         </ToolbarGroup>
