@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
-import { FormNode, FormQuestion, FormEntity, FormConditionSet, FormSection, FormSubSection } from '@/types/form';
+import { FormNode, FormQuestion, FormEntity, FormConditionSet, FormSection, FormSubSection, PROFILE_REFERENCE_FIELDS } from '@/types/form';
 import {
   ChevronRight,
   ChevronDown,
@@ -125,6 +125,22 @@ const getNodeLabel = (node: FormNode): string => {
     default:
       return node.nodeType;
   }
+};
+
+// Get reference field label for profilereference questions
+const getReferenceLabel = (node: FormNode): string | null => {
+  if (node.nodeType !== 'question') return null;
+  const q = node as FormQuestion;
+  if (q.type !== 'profilereference') return null;
+
+  // Find reference child
+  const ref = q.children.find(c => c.nodeType === 'reference') as { field?: string } | undefined;
+  const fieldValue = ref?.field || q.format;
+
+  if (!fieldValue) return null;
+
+  const fieldInfo = PROFILE_REFERENCE_FIELDS.find(f => f.value === fieldValue);
+  return fieldInfo ? fieldInfo.label : fieldValue;
 };
 
 const getNodeBadge = (node: FormNode): string | null => {
@@ -405,9 +421,16 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
         {getNodeIcon(node)}
 
         {/* Label */}
-        <span className={`flex-1 truncate text-sm ${isSelected ? 'text-slate-900 font-medium' : 'text-slate-700'}`}>
-          {getNodeLabel(node)}
-        </span>
+        <div className="flex-1 min-w-0">
+          <span className={`block truncate text-sm ${isSelected ? 'text-slate-900 font-medium' : 'text-slate-700'}`}>
+            {getNodeLabel(node)}
+          </span>
+          {getReferenceLabel(node) && (
+            <span className="block truncate text-[10px] text-indigo-500">
+              → {getReferenceLabel(node)}
+            </span>
+          )}
+        </div>
 
         {/* Badge */}
         {badge && (
