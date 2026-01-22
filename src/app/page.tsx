@@ -9,6 +9,7 @@ import { Toolbar } from '@/components/Toolbar';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { FormPreview } from '@/components/FormPreview';
 import { SmartFormGenerator } from '@/components/SmartFormGenerator';
+import { ValidationStatus } from '@/components/ValidationStatus';
 
 export default function Home() {
   const { form, isPreviewing } = useFormStore();
@@ -35,8 +36,11 @@ export default function Home() {
                   <FormTree />
                 </div>
 
-                <div className="w-[400px] border-l border-slate-200 overflow-auto bg-white">
-                  <PropertyPanel />
+                <div className="w-[400px] border-l border-slate-200 overflow-auto bg-white flex flex-col">
+                  <ValidationStatus />
+                  <div className="flex-1 overflow-auto">
+                    <PropertyPanel />
+                  </div>
                 </div>
               </>
             )
