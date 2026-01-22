@@ -190,8 +190,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     <header className="border-b border-slate-200 bg-white shadow-sm">
       {/* Main toolbar */}
       <div className="h-12 flex items-center px-2 gap-1">
-        {/* Logo */}
-        <div className="flex items-center gap-2 px-3 border-r border-slate-200 mr-2">
+        {/* Logo - matches sidebar width (w-56 = 224px) */}
+        <div className="w-56 flex items-center gap-2 px-3 border-r border-slate-200">
           <Hammer className="w-5 h-5 text-cyan-600" />
           <span className="font-bold text-slate-800 text-sm tracking-wide">FormForge</span>
         </div>
@@ -258,7 +258,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
       {/* Section labels */}
       <div className="h-5 flex items-center px-2 text-[10px] text-slate-400 border-t border-slate-100 bg-slate-50">
-        <div className="w-[140px]" /> {/* Logo space */}
+        <div className="w-56" /> {/* Logo space - matches sidebar width */}
         <span className="px-2">File Management</span>
         <span className="px-8">Edit</span>
         <span className="px-2 text-cyan-600 font-medium">Tools</span>
