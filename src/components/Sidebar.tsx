@@ -1,6 +1,7 @@
 'use client';
 
 import { useFormStore } from '@/stores/formStore';
+import { useModal } from '@/components/Modal';
 import {
   FolderOpen,
   Folder,
@@ -47,6 +48,8 @@ export const Sidebar: React.FC = () => {
     addNote,
   } = useFormStore();
 
+  const { showPrompt } = useModal();
+
   const selectedNode = selectedNodeId ? findNodeById(selectedNodeId) : null;
   const selectedNodeType = selectedNode?.nodeType;
 
@@ -60,21 +63,22 @@ export const Sidebar: React.FC = () => {
     'conditional',
   ].includes(selectedNodeType);
 
-  const handleAddSection = () => {
+  const handleAddSection = async () => {
     if (!form) return;
-    const title = prompt('Section title:', 'New Section');
+    const title = await showPrompt('New Section', 'Enter section title:', 'New Section');
     if (title) addSection(title);
   };
 
-  const handleAddSubsection = () => {
+  const handleAddSubsection = async () => {
     if (!selectedNodeId || selectedNodeType !== 'section') return;
-    const title = prompt('Subsection title:', 'New Subsection');
+    const title = await showPrompt('New Subsection', 'Enter subsection title:', 'New Subsection');
     if (title) addSubSection(selectedNodeId, title);
   };
 
-  const handleAddEntity = (type: 'single' | 'addmore') => {
+  const handleAddEntity = async (type: 'single' | 'addmore') => {
     if (!selectedNodeId || !canAddToSelected) return;
-    const title = prompt('Entity title:', type === 'addmore' ? 'New Repeatable Group' : 'New Group');
+    const defaultTitle = type === 'addmore' ? 'New Repeatable Group' : 'New Group';
+    const title = await showPrompt('New Entity', 'Enter entity title:', defaultTitle);
     if (title) addEntity(selectedNodeId, title, type);
   };
 
@@ -93,32 +97,32 @@ export const Sidebar: React.FC = () => {
     addConditional(selectedNodeId);
   };
 
-  const handleAddOption = () => {
+  const handleAddOption = async () => {
     if (!selectedNodeId || selectedNodeType !== 'question') return;
     const selectedQuestion = selectedNode as { type?: string };
     if (!['radio', 'radioseperate', 'select'].includes(selectedQuestion.type || '')) return;
-    const text = prompt('Option text:', 'New Option');
+    const text = await showPrompt('New Option', 'Enter option text:', 'New Option');
     if (text) {
       const value = text.toLowerCase().replace(/\s+/g, '_');
       addOption(selectedNodeId, value, text);
     }
   };
 
-  const handleAddDescription = () => {
+  const handleAddDescription = async () => {
     if (!selectedNodeId || !canAddToSelected) return;
-    const text = prompt('Description text:', '');
+    const text = await showPrompt('New Description', 'Enter description text:', '');
     if (text) addDescription(selectedNodeId, text);
   };
 
-  const handleAddWarning = () => {
+  const handleAddWarning = async () => {
     if (!selectedNodeId || !canAddToSelected) return;
-    const text = prompt('Warning text:', '');
+    const text = await showPrompt('New Warning', 'Enter warning text:', '');
     if (text) addWarning(selectedNodeId, text);
   };
 
-  const handleAddNote = () => {
+  const handleAddNote = async () => {
     if (!selectedNodeId || !canAddToSelected) return;
-    const text = prompt('Note text:', '');
+    const text = await showPrompt('New Note', 'Enter note text:', '');
     if (text) addNote(selectedNodeId, text);
   };
 
@@ -127,7 +131,7 @@ export const Sidebar: React.FC = () => {
       id: 'section',
       label: 'Section',
       icon: FolderOpen,
-      color: 'text-green-400',
+      color: 'text-green-600',
       action: handleAddSection,
       disabled: !form,
     },
@@ -135,7 +139,7 @@ export const Sidebar: React.FC = () => {
       id: 'subsection',
       label: 'Subsection',
       icon: Folder,
-      color: 'text-teal-400',
+      color: 'text-teal-600',
       action: handleAddSubsection,
       disabled: selectedNodeType !== 'section',
     },
@@ -143,7 +147,7 @@ export const Sidebar: React.FC = () => {
       id: 'entity',
       label: 'Entity',
       icon: Layers,
-      color: 'text-purple-400',
+      color: 'text-purple-600',
       action: () => handleAddEntity('single'),
       disabled: !canAddToSelected,
     },
@@ -151,7 +155,7 @@ export const Sidebar: React.FC = () => {
       id: 'entity-addmore',
       label: 'Entity (Addmore)',
       icon: ListChecks,
-      color: 'text-purple-500',
+      color: 'text-purple-700',
       action: () => handleAddEntity('addmore'),
       disabled: !canAddToSelected,
     },
@@ -159,7 +163,7 @@ export const Sidebar: React.FC = () => {
       id: 'conditionset',
       label: 'Condition Set',
       icon: GitBranch,
-      color: 'text-yellow-400',
+      color: 'text-amber-600',
       action: handleAddConditionSet,
       disabled: !canAddToSelected,
     },
@@ -167,7 +171,7 @@ export const Sidebar: React.FC = () => {
       id: 'conditional',
       label: 'Conditional',
       icon: GitMerge,
-      color: 'text-yellow-500',
+      color: 'text-amber-700',
       action: handleAddConditional,
       disabled: selectedNodeType !== 'conditionset',
     },
@@ -175,7 +179,7 @@ export const Sidebar: React.FC = () => {
       id: 'question',
       label: 'Question',
       icon: CircleDot,
-      color: 'text-blue-400',
+      color: 'text-blue-600',
       action: handleAddQuestion,
       disabled: !canAddToSelected,
     },
@@ -183,7 +187,7 @@ export const Sidebar: React.FC = () => {
       id: 'option',
       label: 'Option',
       icon: CheckSquare,
-      color: 'text-blue-300',
+      color: 'text-blue-500',
       action: handleAddOption,
       disabled: selectedNodeType !== 'question' || !['radio', 'radioseperate', 'select'].includes((selectedNode as { type?: string })?.type || ''),
     },
@@ -191,7 +195,7 @@ export const Sidebar: React.FC = () => {
       id: 'description',
       label: 'Description',
       icon: MessageSquare,
-      color: 'text-gray-400',
+      color: 'text-slate-500',
       action: handleAddDescription,
       disabled: !canAddToSelected,
     },
@@ -199,7 +203,7 @@ export const Sidebar: React.FC = () => {
       id: 'simpletext',
       label: 'Simple Text',
       icon: Type,
-      color: 'text-gray-500',
+      color: 'text-slate-600',
       action: handleAddDescription,
       disabled: !canAddToSelected,
     },
@@ -207,7 +211,7 @@ export const Sidebar: React.FC = () => {
       id: 'warning',
       label: 'Warning',
       icon: AlertTriangle,
-      color: 'text-red-400',
+      color: 'text-red-600',
       action: handleAddWarning,
       disabled: !canAddToSelected,
     },
@@ -215,7 +219,7 @@ export const Sidebar: React.FC = () => {
       id: 'note',
       label: 'Note',
       icon: StickyNote,
-      color: 'text-orange-400',
+      color: 'text-orange-600',
       action: handleAddNote,
       disabled: !canAddToSelected,
     },
@@ -223,7 +227,7 @@ export const Sidebar: React.FC = () => {
       id: 'validation',
       label: 'Validation',
       icon: CheckSquare,
-      color: 'text-emerald-400',
+      color: 'text-emerald-600',
       action: () => {},
       disabled: selectedNodeType !== 'questionnaire',
     },
@@ -231,7 +235,7 @@ export const Sidebar: React.FC = () => {
       id: 'includeform',
       label: 'Include Form',
       icon: FileInput,
-      color: 'text-cyan-400',
+      color: 'text-cyan-600',
       action: () => {},
       disabled: !canAddToSelected,
     },
@@ -239,7 +243,7 @@ export const Sidebar: React.FC = () => {
       id: 'requireddoc',
       label: 'Required Doc',
       icon: FileText,
-      color: 'text-pink-400',
+      color: 'text-pink-600',
       action: () => {},
       disabled: !canAddToSelected,
     },
@@ -247,7 +251,7 @@ export const Sidebar: React.FC = () => {
       id: 'profilereference',
       label: 'Profile Reference',
       icon: User,
-      color: 'text-indigo-400',
+      color: 'text-indigo-600',
       action: () => selectedNodeId && canAddToSelected && addQuestion(selectedNodeId, 'profilereference'),
       disabled: !canAddToSelected,
     },
@@ -255,7 +259,7 @@ export const Sidebar: React.FC = () => {
       id: 'reference',
       label: 'Reference',
       icon: Link,
-      color: 'text-sky-400',
+      color: 'text-sky-600',
       action: () => {},
       disabled: selectedNodeType !== 'question',
     },
@@ -263,17 +267,17 @@ export const Sidebar: React.FC = () => {
       id: 'addressset',
       label: 'Address Set',
       icon: MapPin,
-      color: 'text-rose-400',
+      color: 'text-rose-600',
       action: () => {},
       disabled: !canAddToSelected,
     },
   ];
 
   return (
-    <aside className="w-56 border-r border-white/5 flex flex-col overflow-hidden bg-black/20">
+    <aside className="w-56 border-r border-slate-200 flex flex-col overflow-hidden bg-white">
       {/* Header */}
-      <div className="p-3 border-b border-white/5">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      <div className="p-3 border-b border-slate-100">
+        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           Tools
         </h2>
       </div>
@@ -289,14 +293,14 @@ export const Sidebar: React.FC = () => {
                 onClick={tool.action}
                 disabled={tool.disabled}
                 className={`
-                  w-full flex items-center gap-2 px-3 py-2 text-xs rounded-md transition-colors
+                  w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors
                   ${tool.disabled
-                    ? 'text-gray-600 cursor-not-allowed'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    ? 'text-slate-300 cursor-not-allowed'
+                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
                   }
                 `}
               >
-                <Icon className={`w-4 h-4 ${tool.disabled ? 'text-gray-700' : tool.color}`} />
+                <Icon className={`w-4 h-4 ${tool.disabled ? 'text-slate-300' : tool.color}`} />
                 {tool.label}
               </button>
             );
@@ -305,10 +309,10 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Context info */}
-      <div className="p-3 border-t border-white/5 bg-black/20">
-        <p className="text-[10px] text-gray-600">
+      <div className="p-3 border-t border-slate-100 bg-slate-50">
+        <p className="text-xs text-slate-500">
           {selectedNode ? (
-            <>Selected: <span className="text-gray-400">{selectedNodeType}</span></>
+            <>Selected: <span className="text-slate-700 font-medium">{selectedNodeType}</span></>
           ) : (
             'Select a node to add elements'
           )}

@@ -20,7 +20,8 @@ export default function Home() {
       <SmartFormGenerator isOpen={showGenerator} onClose={() => setShowGenerator(false)} />
 
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar />
+        {/* Hide sidebar during preview */}
+        {!isPreviewing && <Sidebar />}
 
         <main className="flex-1 flex overflow-hidden">
           {form ? (
@@ -30,11 +31,11 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <div className="flex-1 overflow-auto p-4">
+                <div className="flex-1 overflow-auto p-4 bg-slate-50">
                   <FormTree />
                 </div>
 
-                <div className="w-[400px] border-l border-white/5 overflow-auto">
+                <div className="w-[400px] border-l border-slate-200 overflow-auto bg-white">
                   <PropertyPanel />
                 </div>
               </>

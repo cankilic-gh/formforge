@@ -68,6 +68,7 @@ interface FormState {
 
   // Utility
   generateId: () => string;
+  regenerateAllIds: () => void;
   findNodeById: (nodeId: string) => FormNode | null;
   findParentNode: (nodeId: string) => FormNode | null;
   getNodePath: (nodeId: string) => string[];
@@ -164,7 +165,7 @@ export const useFormStore = create<FormState>()(
           nodeType: 'question',
           type,
           format: '',
-          required: false,
+          required: true,
           triggerValue: '',
           comment: '',
           maxlength: type === 'char' ? 500 : type === 'text' ? 5000 : 0,
@@ -565,22 +566,38 @@ export const useFormStore = create<FormState>()(
 
           const updatedForm = deepClone(form);
 
-          // Find and remove from current parent
-          const currentParent = findParentRecursive(updatedForm, nodeId);
-          if (!currentParent || !('children' in currentParent)) return;
+          // Helper to recursively find and remove node from tree
+          const removeNodeFromTree = (parent: FormNode, targetId: string): FormNode | null => {
+            if (!('children' in parent) || !Array.isArray(parent.children)) return null;
 
-          const currentChildren = currentParent.children as FormNode[];
-          const currentIndex = currentChildren.findIndex((c) => c.id === nodeId);
-          if (currentIndex === -1) return;
+            const children = parent.children as FormNode[];
+            const idx = children.findIndex((c) => c.id === targetId);
 
-          const [movedNode] = currentChildren.splice(currentIndex, 1);
+            if (idx !== -1) {
+              const [removed] = children.splice(idx, 1);
+              return removed;
+            }
 
-          // Add to new parent
+            for (const child of children) {
+              const result = removeNodeFromTree(child, targetId);
+              if (result) return result;
+            }
+
+            return null;
+          };
+
+          // Remove from current location
+          const removedNode = removeNodeFromTree(updatedForm, nodeId);
+          if (!removedNode) return; // Node not found or already moved
+
+          // Find target parent and insert
           const newParent = findNodeRecursive(updatedForm, targetParentId);
           if (!newParent || !('children' in newParent)) return;
 
           const newChildren = newParent.children as FormNode[];
-          newChildren.splice(index, 0, movedNode);
+          // Ensure index is within bounds
+          const safeIndex = Math.min(index, newChildren.length);
+          newChildren.splice(safeIndex, 0, removedNode);
 
           set({ form: updatedForm });
           get().saveToHistory();
@@ -652,6 +669,30 @@ export const useFormStore = create<FormState>()(
 
         // Utilities
         generateId: () => generateId(),
+
+        regenerateAllIds: () => {
+          const form = get().form;
+          if (!form) return;
+
+          const updatedForm = deepClone(form);
+
+          // Recursive function to regenerate IDs for all nodes
+          const regenerateIds = (node: FormNode): void => {
+            // Skip the questionnaire root - keep its ID
+            if (node.nodeType !== 'questionnaire') {
+              node.id = generateId();
+            }
+
+            // Process children if they exist
+            if ('children' in node && Array.isArray(node.children)) {
+              node.children.forEach((child) => regenerateIds(child as FormNode));
+            }
+          };
+
+          regenerateIds(updatedForm);
+          set({ form: updatedForm, selectedNodeId: null });
+          get().saveToHistory();
+        },
 
         findNodeById: (nodeId) => {
           const form = get().form;

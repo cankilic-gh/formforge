@@ -12,19 +12,19 @@ import {
   FormDescription,
   QUESTION_TYPE_META,
   CONDITION_OPERATORS,
+  PROFILE_REFERENCE_FIELDS,
   QuestionType,
 } from '@/types/form';
 import { Plus, Trash2, GripVertical } from 'lucide-react';
-import { useState } from 'react';
 
 export const PropertyPanel: React.FC = () => {
-  const { selectedNodeId, findNodeById, updateNode, generateId } = useFormStore();
+  const { selectedNodeId, findNodeById } = useFormStore();
 
   const node = selectedNodeId ? findNodeById(selectedNodeId) : null;
 
   if (!node) {
     return (
-      <div className="p-6 flex flex-col items-center justify-center h-full text-gray-500">
+      <div className="p-6 flex flex-col items-center justify-center h-full text-slate-400">
         <p className="text-sm">Select a node to edit its properties</p>
       </div>
     );
@@ -33,9 +33,9 @@ export const PropertyPanel: React.FC = () => {
   return (
     <div className="p-4 space-y-6">
       {/* Header */}
-      <div className="border-b border-white/5 pb-4">
-        <h2 className="text-sm font-semibold text-white capitalize">{node.nodeType}</h2>
-        <p className="text-xs text-gray-500 mt-1">ID: {node.id}</p>
+      <div className="border-b border-slate-100 pb-4">
+        <h2 className="text-sm font-semibold text-slate-800 capitalize">{node.nodeType}</h2>
+        <p className="text-xs text-slate-400 mt-1 font-mono">ID: {node.id}</p>
       </div>
 
       {/* Properties based on node type */}
@@ -206,7 +206,7 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
       </Field>
 
       {/* Format (if applicable) */}
-      {typeMeta?.hasFormat && typeMeta.formats && (
+      {typeMeta?.hasFormat && typeMeta.formats && node.type !== 'profilereference' && (
         <Field label="Format">
           <select
             value={node.format}
@@ -217,6 +217,34 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
               <option key={format || 'default'} value={format}>
                 {format || '(default)'}
               </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      {/* Profile Reference Field (grouped dropdown) */}
+      {node.type === 'profilereference' && (
+        <Field label="Reference Field">
+          <select
+            value={node.format}
+            onChange={(e) => updateNode(node.id, { format: e.target.value })}
+            className="w-full"
+          >
+            <option value="">Select a field...</option>
+            {Object.entries(
+              PROFILE_REFERENCE_FIELDS.reduce((acc, field) => {
+                if (!acc[field.category]) acc[field.category] = [];
+                acc[field.category].push(field);
+                return acc;
+              }, {} as Record<string, typeof PROFILE_REFERENCE_FIELDS>)
+            ).map(([category, fields]) => (
+              <optgroup key={category} label={category}>
+                {fields.map((field) => (
+                  <option key={field.value} value={field.value}>
+                    {field.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </Field>
@@ -245,34 +273,34 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
       {typeMeta?.hasOptions && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-gray-400">Options ({options.length})</label>
-            <button onClick={addOption} className="text-xs text-forge-cyan hover:underline flex items-center gap-1">
+            <label className="text-xs font-medium text-slate-600">Options ({options.length})</label>
+            <button onClick={addOption} className="text-xs text-cyan-600 hover:underline flex items-center gap-1">
               <Plus className="w-3 h-3" /> Add Option
             </button>
           </div>
           <div className="space-y-2">
             {options.map((option, index) => (
-              <div key={option.id} className="bg-white/5 rounded-lg p-2 space-y-2">
+              <div key={option.id} className="bg-slate-50 rounded-lg p-3 space-y-2 border border-slate-100">
                 {/* Option Header with ID */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <GripVertical className="w-3 h-3 text-gray-600 cursor-move" />
-                    <span className="text-[10px] text-gray-500">#{index + 1}</span>
+                    <GripVertical className="w-3 h-3 text-slate-400 cursor-move" />
+                    <span className="text-[10px] text-slate-500 font-medium">#{index + 1}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-forge-cyan font-mono">ID: {option.id}</span>
+                    <span className="text-[10px] text-cyan-600 font-mono bg-cyan-50 px-1.5 py-0.5 rounded">ID: {option.id}</span>
                     <button
                       onClick={() => deleteOption(option.id)}
-                      className="p-1 hover:bg-red-500/20 rounded"
+                      className="p-1 hover:bg-red-100 rounded"
                     >
-                      <Trash2 className="w-3 h-3 text-red-400" />
+                      <Trash2 className="w-3 h-3 text-red-500" />
                     </button>
                   </div>
                 </div>
                 {/* Option Fields */}
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
-                    <label className="text-[9px] text-gray-500 block mb-0.5">Value</label>
+                    <label className="text-[10px] text-slate-500 block mb-1">Value</label>
                     <input
                       type="text"
                       value={option.value}
@@ -282,7 +310,7 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="text-[9px] text-gray-500 block mb-0.5">Label</label>
+                    <label className="text-[10px] text-slate-500 block mb-1">Label</label>
                     <input
                       type="text"
                       value={option.text}
@@ -296,7 +324,7 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
             ))}
           </div>
           {options.length === 0 && (
-            <p className="text-[10px] text-gray-500 italic">No options yet. Click "Add Option" to create one.</p>
+            <p className="text-xs text-slate-400 italic">No options yet. Click "Add Option" to create one.</p>
           )}
         </div>
       )}
@@ -325,10 +353,10 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
 
       {/* Advanced Section */}
       <details className="mt-6">
-        <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-300">
+        <summary className="text-xs font-medium text-slate-500 cursor-pointer hover:text-slate-700">
           Advanced Options
         </summary>
-        <div className="mt-4 space-y-4 pl-2 border-l border-white/10">
+        <div className="mt-4 space-y-4 pl-3 border-l-2 border-slate-100">
           <Field label="Ref Name">
             <input
               type="text"
@@ -419,10 +447,10 @@ const EntityProps: React.FC<{ node: FormEntity }> = ({ node }) => {
       </Field>
 
       <details className="mt-6">
-        <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-300">
+        <summary className="text-xs font-medium text-slate-500 cursor-pointer hover:text-slate-700">
           NCBE/ILG Export
         </summary>
-        <div className="mt-4 space-y-4 pl-2 border-l border-white/10">
+        <div className="mt-4 space-y-4 pl-3 border-l-2 border-slate-100">
           <Field label="NCBE Name">
             <input
               type="text"
@@ -473,8 +501,8 @@ const ConditionSetProps: React.FC<{ node: FormConditionSet }> = ({ node }) => {
         </select>
       </Field>
 
-      <div className="p-3 bg-forge-yellow/10 border border-forge-yellow/20 rounded-lg">
-        <p className="text-xs text-forge-yellow">
+      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+        <p className="text-xs text-amber-700">
           <strong>Tip:</strong> Add questions with trigger values inside this condition set, then add a conditional branch to show content when conditions are met.
         </p>
       </div>
@@ -485,19 +513,19 @@ const ConditionSetProps: React.FC<{ node: FormConditionSet }> = ({ node }) => {
 // Helper Components
 const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
   <div>
-    <label className="block text-xs font-medium text-gray-400 mb-1.5">{label}</label>
+    <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>
     {children}
-    {hint && <p className="text-[10px] text-gray-600 mt-1">{hint}</p>}
+    {hint && <p className="text-[10px] text-slate-400 mt-1">{hint}</p>}
   </div>
 );
 
 const ToggleSwitch: React.FC<{ checked: boolean; onChange: (checked: boolean) => void }> = ({ checked, onChange }) => (
   <button
     onClick={() => onChange(!checked)}
-    className={`relative w-10 h-5 rounded-full transition-colors ${checked ? 'bg-forge-cyan' : 'bg-white/10'}`}
+    className={`relative w-10 h-5 rounded-full transition-colors ${checked ? 'bg-cyan-500' : 'bg-slate-200'}`}
   >
     <span
-      className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+      className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
         checked ? 'translate-x-5' : 'translate-x-0'
       }`}
     />

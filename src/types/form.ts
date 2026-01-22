@@ -84,14 +84,32 @@ export type ValidatorClass =
   | 'ilg.common.validators.EmpDateGapValidator'
   | 'ilg.common.validators.WaCertificationDate';
 
-// Profile Reference Fields
+// Profile Reference Fields (from Reference.java)
 export type ProfileReferenceField =
+  // Names
   | 'fullname'
-  | 'ssn'
-  | 'dob'
-  | 'place_of_birth'
+  | 'fullnamesandbox'
+  | 'salutaionfullname'
+  | 'firstname'
+  | 'middlename'
+  | 'lastname'
+  | 'suffix'
   | 'title'
-  | 'ncbe_number'
+  // Identity
+  | 'ssn'
+  | 'ssn_last_four'
+  | 'ssn_dmv'
+  | 'dob'
+  | 'sex'
+  // Place of Birth
+  | 'pob'
+  | 'pob_city'
+  | 'pob_state'
+  | 'pob_state_code'
+  | 'pob_country'
+  | 'place_of_birth'
+  // Address
+  | 'addresstype'
   | 'address1'
   | 'address2'
   | 'city'
@@ -99,12 +117,145 @@ export type ProfileReferenceField =
   | 'zip'
   | 'county'
   | 'country'
+  | 'fulladdress'
+  // Physical Address
+  | 'phy_address_1'
+  | 'phy_address_2'
+  | 'phy_city'
+  | 'phy_state'
+  | 'phy_zip'
+  | 'phy_county'
+  | 'phy_country'
+  // Contact
   | 'email'
-  | 'cellphone'
   | 'primaryphone'
+  | 'cellphone'
+  | 'phone_office'
   | 'fax'
+  | 'othernumber'
+  // Professional
   | 'firmname'
-  | 'addresstype';
+  | 'ncbe_number'
+  | 'wsbanumber'
+  | 'barcodeno'
+  | 'license_name'
+  | 'interview_county'
+  | 'mbe_state'
+  // Law School
+  | 'abbreviated_lawschool'
+  | 'foreignlawschool'
+  | 'nonabalawschool'
+  // Exam Info
+  | 'examfirstday'
+  | 'examfirstdaydate'
+  | 'examsecondday'
+  | 'examseconddaydate'
+  | 'exammonth'
+  | 'exammonthbig'
+  | 'examyear'
+  | 'prevexamyear'
+  | 'prevexammonth'
+  | 'examcertificateday'
+  | 'examcertificatemonthday'
+  | 'mbemonthdaydate'
+  | 'mbeyeardate'
+  // Application
+  | 'currentdeadline'
+  | 'currentfee'
+  // Special
+  | 'today'
+  | 'ubeoctnj'
+  // GA FEA
+  | 'ga_fea_q1'
+  | 'ga_fea_q2'
+  | 'ga_fea_q3'
+  | 'ga_fea_foreign_law_school'
+  | 'ga_fea_foreign_jurisdiction'
+  | 'ga_fea_law_school'
+  // WA specific
+  | 'business_title'
+  | 'entity_role'
+  | 'entity_role_finance';
+
+// Profile Reference Field options for UI
+export const PROFILE_REFERENCE_FIELDS: { value: ProfileReferenceField; label: string; category: string }[] = [
+  // Names
+  { value: 'fullname', label: 'Full Name', category: 'Name' },
+  { value: 'firstname', label: 'First Name', category: 'Name' },
+  { value: 'middlename', label: 'Middle Name', category: 'Name' },
+  { value: 'lastname', label: 'Last Name', category: 'Name' },
+  { value: 'suffix', label: 'Suffix', category: 'Name' },
+  { value: 'title', label: 'Title/Salutation', category: 'Name' },
+  { value: 'salutaionfullname', label: 'Salutation + Full Name', category: 'Name' },
+  { value: 'fullnamesandbox', label: 'Full Name (No Suffix)', category: 'Name' },
+  // Identity
+  { value: 'ssn', label: 'SSN', category: 'Identity' },
+  { value: 'ssn_last_four', label: 'SSN (Last 4)', category: 'Identity' },
+  { value: 'ssn_dmv', label: 'SSN + DMV', category: 'Identity' },
+  { value: 'dob', label: 'Date of Birth', category: 'Identity' },
+  { value: 'sex', label: 'Gender', category: 'Identity' },
+  // Place of Birth
+  { value: 'place_of_birth', label: 'Place of Birth', category: 'Birth' },
+  { value: 'pob', label: 'POB (Legacy)', category: 'Birth' },
+  { value: 'pob_city', label: 'POB City', category: 'Birth' },
+  { value: 'pob_state', label: 'POB State', category: 'Birth' },
+  { value: 'pob_state_code', label: 'POB State Code', category: 'Birth' },
+  { value: 'pob_country', label: 'POB Country', category: 'Birth' },
+  // Address
+  { value: 'addresstype', label: 'Address Type', category: 'Address' },
+  { value: 'address1', label: 'Address Line 1', category: 'Address' },
+  { value: 'address2', label: 'Address Line 2', category: 'Address' },
+  { value: 'city', label: 'City', category: 'Address' },
+  { value: 'state', label: 'State', category: 'Address' },
+  { value: 'zip', label: 'ZIP Code', category: 'Address' },
+  { value: 'county', label: 'County', category: 'Address' },
+  { value: 'country', label: 'Country', category: 'Address' },
+  { value: 'fulladdress', label: 'Full Address', category: 'Address' },
+  // Physical Address
+  { value: 'phy_address_1', label: 'Physical Address 1', category: 'Physical Address' },
+  { value: 'phy_address_2', label: 'Physical Address 2', category: 'Physical Address' },
+  { value: 'phy_city', label: 'Physical City', category: 'Physical Address' },
+  { value: 'phy_state', label: 'Physical State', category: 'Physical Address' },
+  { value: 'phy_zip', label: 'Physical ZIP', category: 'Physical Address' },
+  { value: 'phy_county', label: 'Physical County', category: 'Physical Address' },
+  { value: 'phy_country', label: 'Physical Country', category: 'Physical Address' },
+  // Contact
+  { value: 'email', label: 'Email', category: 'Contact' },
+  { value: 'primaryphone', label: 'Primary Phone', category: 'Contact' },
+  { value: 'cellphone', label: 'Cell Phone', category: 'Contact' },
+  { value: 'phone_office', label: 'Office Phone', category: 'Contact' },
+  { value: 'fax', label: 'Fax', category: 'Contact' },
+  { value: 'othernumber', label: 'Other Number', category: 'Contact' },
+  // Professional
+  { value: 'firmname', label: 'Firm Name', category: 'Professional' },
+  { value: 'ncbe_number', label: 'NCBE Number', category: 'Professional' },
+  { value: 'wsbanumber', label: 'WSBA Number', category: 'Professional' },
+  { value: 'barcodeno', label: 'Barcode No', category: 'Professional' },
+  { value: 'license_name', label: 'License Name', category: 'Professional' },
+  { value: 'interview_county', label: 'Interview County', category: 'Professional' },
+  { value: 'mbe_state', label: 'MBE State', category: 'Professional' },
+  // Law School
+  { value: 'abbreviated_lawschool', label: 'Law School (Abbreviated)', category: 'Education' },
+  { value: 'foreignlawschool', label: 'Foreign Law School', category: 'Education' },
+  { value: 'nonabalawschool', label: 'Non-ABA Law School', category: 'Education' },
+  // Exam Info
+  { value: 'examfirstday', label: 'Exam First Day', category: 'Exam' },
+  { value: 'examfirstdaydate', label: 'Exam First Day (Date)', category: 'Exam' },
+  { value: 'examsecondday', label: 'Exam Second Day', category: 'Exam' },
+  { value: 'examseconddaydate', label: 'Exam Second Day (Date)', category: 'Exam' },
+  { value: 'exammonth', label: 'Exam Month', category: 'Exam' },
+  { value: 'exammonthbig', label: 'Exam Month (Uppercase)', category: 'Exam' },
+  { value: 'examyear', label: 'Exam Year', category: 'Exam' },
+  { value: 'prevexamyear', label: 'Previous Exam Year', category: 'Exam' },
+  { value: 'prevexammonth', label: 'Previous Exam Month', category: 'Exam' },
+  { value: 'examcertificateday', label: 'Exam Certificate Day', category: 'Exam' },
+  { value: 'examcertificatemonthday', label: 'Exam Certificate Month/Day', category: 'Exam' },
+  // Application
+  { value: 'currentdeadline', label: 'Current Deadline', category: 'Application' },
+  { value: 'currentfee', label: 'Current Fee', category: 'Application' },
+  // Special
+  { value: 'today', label: 'Today\'s Date', category: 'Special' },
+];
 
 // Base Node Interface
 export interface BaseNode {
@@ -311,7 +462,7 @@ export const QUESTION_TYPE_META: QuestionTypeMeta[] = [
   { type: 'lawschool', label: 'Law School', category: 'special', hasOptions: false, hasFormat: true, formats: ['', 'aba', 'all'], icon: 'GraduationCap' },
   { type: 'examsite', label: 'Exam Site', category: 'special', hasOptions: false, hasFormat: false, icon: 'Building' },
   { type: 'signature', label: 'Signature', category: 'special', hasOptions: false, hasFormat: false, icon: 'PenTool' },
-  { type: 'profilereference', label: 'Profile Reference', category: 'special', hasOptions: false, hasFormat: false, icon: 'User' },
+  { type: 'profilereference', label: 'Profile Reference', category: 'special', hasOptions: false, hasFormat: true, formats: ['fullname', 'firstname', 'middlename', 'lastname', 'suffix', 'title', 'ssn', 'ssn_last_four', 'dob', 'sex', 'place_of_birth', 'pob_city', 'pob_state', 'pob_country', 'addresstype', 'address1', 'address2', 'city', 'state', 'zip', 'county', 'country', 'fulladdress', 'email', 'primaryphone', 'cellphone', 'phone_office', 'fax', 'firmname', 'ncbe_number', 'abbreviated_lawschool', 'examfirstday', 'examsecondday', 'exammonth', 'examyear', 'currentdeadline', 'currentfee', 'today'], icon: 'User' },
   { type: 'examreference', label: 'Exam Reference', category: 'special', hasOptions: false, hasFormat: false, icon: 'FileText' },
   { type: 'notice', label: 'Notice', category: 'special', hasOptions: false, hasFormat: false, icon: 'Info' },
 ];

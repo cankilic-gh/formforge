@@ -290,6 +290,41 @@ const parseSection = (node: Record<string, unknown>): FormSection => ({
   children: ensureArray(node['subsection'] as Record<string, unknown>[]).map(parseSubSection),
 });
 
+// Regenerate all IDs in the form tree with sequential IDs
+const regenerateAllIds = (form: FormQuestionnaire): void => {
+  const suffix = form.suffix || generateSuffix();
+  let nextId = 2; // Start from 2, questionnaire gets 1
+
+  // Update questionnaire ID
+  form.id = `1${suffix}`;
+  form.suffix = suffix;
+
+  // Recursive function to regenerate IDs
+  const regenerate = (node: FormNode): void => {
+    if (node.nodeType !== 'questionnaire') {
+      node.id = `${nextId}${suffix}`;
+      nextId++;
+    }
+
+    if ('children' in node && Array.isArray(node.children)) {
+      node.children.forEach((child) => regenerate(child as FormNode));
+    }
+  };
+
+  // Regenerate for all children
+  form.children.forEach((section) => {
+    regenerate(section);
+  });
+
+  // Update nextId in form
+  form.nextId = nextId;
+};
+
+// Generate a random 5-digit suffix
+const generateSuffix = (): string => {
+  return Math.floor(10000 + Math.random() * 90000).toString();
+};
+
 // Parse Questionnaire
 export const parseXML = (xmlString: string): FormQuestionnaire | null => {
   try {
@@ -302,7 +337,7 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
       return null;
     }
 
-    return {
+    const form: FormQuestionnaire = {
       id: String(questionnaire['@_id'] || generateId()),
       nodeType: 'questionnaire',
       title: String(questionnaire['@_title'] || 'Untitled Form'),
@@ -310,6 +345,11 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
       nextId: parseInt(String(questionnaire['@_nextid'] || '1'), 10) || 1,
       children: ensureArray(questionnaire['section'] as Record<string, unknown>[]).map(parseSection),
     };
+
+    // Auto-regenerate all IDs to ensure uniqueness
+    regenerateAllIds(form);
+
+    return form;
   } catch (error) {
     console.error('Failed to parse XML:', error);
     return null;
@@ -500,11 +540,6 @@ export const buildXML = (form: FormQuestionnaire): string => {
   };
 
   return builder.build(xmlObj);
-};
-
-// Generate a random 5-digit suffix for new forms
-const generateSuffix = (): string => {
-  return Math.floor(10000 + Math.random() * 90000).toString();
 };
 
 // Create empty form

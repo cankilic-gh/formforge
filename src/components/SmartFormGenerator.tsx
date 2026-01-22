@@ -210,26 +210,26 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
 
   const getConfidenceColor = (confidence: string): string => {
     switch (confidence) {
-      case 'high': return 'text-green-400';
-      case 'medium': return 'text-yellow-400';
-      case 'low': return 'text-orange-400';
-      default: return 'text-gray-400';
+      case 'high': return 'text-green-600';
+      case 'medium': return 'text-amber-600';
+      case 'low': return 'text-orange-600';
+      default: return 'text-slate-400';
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-      <div className="bg-slate-900 border border-white/10 rounded-lg w-[700px] max-h-[80vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-2xl w-[700px] max-h-[80vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <Wand2 className="w-5 h-5 text-forge-cyan" />
-            <h2 className="text-lg font-semibold text-white">Smart Form Generator</h2>
+            <Wand2 className="w-5 h-5 text-cyan-600" />
+            <h2 className="text-lg font-semibold text-slate-800">Smart Form Generator</h2>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded">
-            <X className="w-5 h-5 text-gray-400" />
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg">
+            <X className="w-5 h-5 text-slate-400" />
           </button>
         </div>
 
@@ -237,7 +237,7 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
         <div className="flex-1 overflow-auto p-4">
           {step === 'input' ? (
             <div className="space-y-4">
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-slate-600">
                 Paste form field labels or upload a document. The system will automatically detect field types.
               </p>
 
@@ -253,7 +253,7 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
                     className="hidden"
                   />
                 </label>
-                <span className="text-xs text-gray-500">or paste text below</span>
+                <span className="text-xs text-slate-500">or paste text below</span>
               </div>
 
               {/* Text Input */}
@@ -273,12 +273,12 @@ ZIP Code
 Date of Birth
 Have you ever been convicted of a crime?
 Please describe your work experience:`}
-                className="w-full h-64 bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white placeholder-gray-600 resize-none font-mono"
+                className="w-full h-64 bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-800 placeholder-slate-400 resize-none font-mono"
               />
 
               {/* Example */}
-              <div className="bg-forge-cyan/10 border border-forge-cyan/20 rounded-lg p-3">
-                <p className="text-xs text-forge-cyan">
+              <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3">
+                <p className="text-xs text-cyan-700">
                   <strong>Tip:</strong> The system recognizes patterns like "First Name" → Text Input,
                   "State" → State Select, "Have you ever..." → Yes/No Radio, etc.
                 </p>
@@ -286,25 +286,25 @@ Please describe your work experience:`}
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-slate-600">
                 Review detected fields. You can change types or remove items before generating.
               </p>
 
               {/* Detected Fields */}
               <div className="space-y-2 max-h-80 overflow-auto">
                 {detectedFields.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">No fields detected. Try different text.</p>
+                  <p className="text-center text-slate-400 py-8">No fields detected. Try different text.</p>
                 ) : (
                   detectedFields.map((field, index) => (
-                    <div key={index} className="flex items-center gap-3 bg-white/5 rounded-lg p-3">
-                      <span className="text-sm text-white flex-1">{field.label}</span>
-                      <span className={`text-[10px] ${getConfidenceColor(field.confidence)}`}>
+                    <div key={index} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-lg p-3">
+                      <span className="text-sm text-slate-800 flex-1">{field.label}</span>
+                      <span className={`text-[10px] font-medium ${getConfidenceColor(field.confidence)}`}>
                         {field.confidence}
                       </span>
                       <select
                         value={field.type}
                         onChange={(e) => updateFieldType(index, e.target.value as QuestionType)}
-                        className="bg-black/30 border border-white/10 rounded px-2 py-1 text-xs text-white"
+                        className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-700"
                       >
                         <option value="char">Text Input</option>
                         <option value="text">Text Area</option>
@@ -320,9 +320,9 @@ Please describe your work experience:`}
                       </select>
                       <button
                         onClick={() => removeField(index)}
-                        className="p-1 hover:bg-red-500/20 rounded"
+                        className="p-1 hover:bg-red-100 rounded"
                       >
-                        <X className="w-4 h-4 text-red-400" />
+                        <X className="w-4 h-4 text-red-500" />
                       </button>
                     </div>
                   ))
@@ -330,8 +330,8 @@ Please describe your work experience:`}
               </div>
 
               {detectedFields.length > 0 && (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-                  <p className="text-xs text-yellow-400">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs text-amber-700">
                     <strong>Note:</strong> {detectedFields.length} fields will be added to the selected node.
                     Make sure you have a subsection or entity selected.
                   </p>
@@ -342,7 +342,7 @@ Please describe your work experience:`}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-white/10">
+        <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50">
           {step === 'review' && (
             <button
               onClick={() => setStep('input')}

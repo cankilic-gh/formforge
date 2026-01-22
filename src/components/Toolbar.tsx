@@ -1,6 +1,7 @@
 'use client';
 
 import { useFormStore } from '@/stores/formStore';
+import { useModal } from '@/components/Modal';
 import { parseXML, buildXML, createEmptyForm } from '@/lib/xmlParser';
 import {
   FileUp,
@@ -16,7 +17,7 @@ import {
   Trash2,
   Hash,
   Settings,
-  Moon,
+  Sun,
   Hammer,
   Save,
   Eye,
@@ -39,18 +40,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     history,
     historyIndex,
     deleteNode,
-    duplicateNode,
     findNodeById,
     isPreviewing,
     togglePreview,
+    regenerateAllIds,
   } = useFormStore();
 
+  const { showAlert, showConfirm, showPrompt } = useModal();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // File Management
-  const handleNew = () => {
-    if (form && !confirm('Create new form? Unsaved changes will be lost.')) return;
-    const title = prompt('Form title:', 'Character & Fitness Questionnaire');
+  const handleNew = async () => {
+    if (form) {
+      const confirmed = await showConfirm('New Form', 'Create new form? Unsaved changes will be lost.');
+      if (!confirmed) return;
+    }
+    const title = await showPrompt('New Form', 'Enter form title:', 'Character & Fitness Questionnaire');
     if (title) {
       setForm(createEmptyForm(title));
     }
@@ -60,31 +65,29 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const xml = event.target?.result as string;
       const parsed = parseXML(xml);
       if (parsed) {
         setForm(parsed);
       } else {
-        alert('Failed to parse XML file');
+        await showAlert('Error', 'Failed to parse XML file. Please check the file format.');
       }
     };
     reader.readAsText(file);
     e.target.value = '';
   };
 
-  const handleReload = () => {
+  const handleReload = async () => {
     if (!form) return;
-    if (confirm('Reload form? All unsaved changes will be lost.')) {
-      // For now, just reset to initial state in history
-      if (history.length > 0) {
-        setForm(history[0]);
-      }
+    const confirmed = await showConfirm('Reload Form', 'Reload form? All unsaved changes will be lost.');
+    if (confirmed && history.length > 0) {
+      setForm(history[0]);
     }
   };
 
@@ -100,9 +103,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     URL.revokeObjectURL(url);
   };
 
-  const handleSaveAs = () => {
+  const handleSaveAs = async () => {
     if (!form) return;
-    const filename = prompt('Save as:', `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`);
+    const defaultName = `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
+    const filename = await showPrompt('Save As', 'Enter filename:', defaultName);
     if (!filename) return;
 
     const xml = buildXML(form);
@@ -115,9 +119,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     URL.revokeObjectURL(url);
   };
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (!form) return;
-    if (confirm('Close form? Unsaved changes will be lost.')) {
+    const confirmed = await showConfirm('Close Form', 'Close form? Unsaved changes will be lost.');
+    if (confirmed) {
       setForm(null);
     }
   };
@@ -126,11 +131,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
-  const handleCut = () => {
-    // TODO: Implement cut (copy + delete)
+  const handleCut = async () => {
     if (selectedNodeId) {
       handleCopy();
-      handleDelete();
+      await handleDelete();
     }
   };
 
@@ -142,39 +146,42 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     }
   };
 
-  const handlePaste = () => {
-    // TODO: Implement paste
+  const handlePaste = async () => {
     const clipboardData = localStorage.getItem('formforge-clipboard');
     if (clipboardData) {
-      alert('Paste functionality coming soon');
+      await showAlert('Coming Soon', 'Paste functionality coming soon');
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!selectedNodeId) return;
     const node = findNodeById(selectedNodeId);
     if (node?.nodeType === 'questionnaire') {
-      alert('Cannot delete the root questionnaire');
+      await showAlert('Error', 'Cannot delete the root questionnaire');
       return;
     }
-    if (confirm('Delete selected node and all its children?')) {
+    const confirmed = await showConfirm('Delete Node', 'Delete selected node and all its children?');
+    if (confirmed) {
       deleteNode(selectedNodeId);
     }
   };
 
-  const handleRegenerateIds = () => {
-    // TODO: Implement regenerate IDs
-    alert('Regenerate IDs functionality coming soon');
+  const handleRegenerateIds = async () => {
+    if (!form) return;
+    const confirmed = await showConfirm('Regenerate IDs', 'Regenerate all IDs? This will assign new unique IDs to all nodes.');
+    if (confirmed) {
+      regenerateAllIds();
+    }
   };
 
   return (
-    <header className="border-b border-white/5 bg-black/30">
+    <header className="border-b border-slate-200 bg-white shadow-sm">
       {/* Main toolbar */}
       <div className="h-12 flex items-center px-2 gap-1">
         {/* Logo */}
-        <div className="flex items-center gap-2 px-3 border-r border-white/10 mr-2">
-          <Hammer className="w-5 h-5 text-forge-cyan" />
-          <span className="font-bold text-white text-sm tracking-wide">FormForge</span>
+        <div className="flex items-center gap-2 px-3 border-r border-slate-200 mr-2">
+          <Hammer className="w-5 h-5 text-cyan-600" />
+          <span className="font-bold text-slate-800 text-sm tracking-wide">FormForge</span>
         </div>
 
         {/* File Management */}
@@ -187,7 +194,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
           <ToolbarButton icon={X} label="Close" onClick={handleClose} disabled={!form} />
         </ToolbarGroup>
 
-        <div className="w-px h-6 bg-white/10 mx-1" />
+        <div className="w-px h-6 bg-slate-200 mx-1" />
 
         {/* Edit */}
         <ToolbarGroup label="Edit">
@@ -200,7 +207,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
           <ToolbarButton icon={Hash} label="Regenerate Id's" onClick={handleRegenerateIds} disabled={!form} />
         </ToolbarGroup>
 
-        <div className="w-px h-6 bg-white/10 mx-1" />
+        <div className="w-px h-6 bg-slate-200 mx-1" />
 
         {/* Tools */}
         <ToolbarGroup label="Tools">
@@ -225,7 +232,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
             active={isPreviewing}
           />
           <ToolbarButton icon={Settings} label="Settings" onClick={() => {}} />
-          <ToolbarButton icon={Moon} label="Dark Mode" onClick={() => {}} active />
+          <ToolbarButton icon={Sun} label="Light Mode" onClick={() => {}} active />
         </ToolbarGroup>
 
         <input
@@ -238,11 +245,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       </div>
 
       {/* Section labels */}
-      <div className="h-5 flex items-center px-2 text-[10px] text-gray-600 border-t border-white/5 bg-black/20">
+      <div className="h-5 flex items-center px-2 text-[10px] text-slate-400 border-t border-slate-100 bg-slate-50">
         <div className="w-[140px]" /> {/* Logo space */}
         <span className="px-2">File Management</span>
         <span className="px-8">Edit</span>
-        <span className="px-2 text-forge-cyan">Tools</span>
+        <span className="px-2 text-cyan-600 font-medium">Tools</span>
         <div className="flex-1" />
         <span className="px-2">View</span>
       </div>
@@ -280,14 +287,14 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({
     disabled={disabled}
     title={label}
     className={`
-      flex flex-col items-center justify-center px-2 py-1 rounded transition-colors min-w-[50px]
+      flex flex-col items-center justify-center px-2 py-1 rounded-lg transition-colors min-w-[50px]
       ${disabled
         ? 'opacity-30 cursor-not-allowed'
         : danger
-          ? 'hover:bg-red-500/10 text-gray-400 hover:text-red-400'
+          ? 'hover:bg-red-50 text-slate-500 hover:text-red-600'
           : active
-            ? 'bg-forge-cyan/10 text-forge-cyan'
-            : 'hover:bg-white/5 text-gray-400 hover:text-white'
+            ? 'bg-cyan-50 text-cyan-600'
+            : 'hover:bg-slate-100 text-slate-500 hover:text-slate-700'
       }
     `}
   >

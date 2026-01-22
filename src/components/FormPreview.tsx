@@ -28,6 +28,26 @@ export const FormPreview: React.FC = () => {
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
         rel="stylesheet"
       />
+      {/* Preview-specific styles */}
+      <style>{`
+        .preview-form *:focus {
+          outline: none !important;
+          box-shadow: none !important;
+        }
+        .preview-form .form-control:focus,
+        .preview-form .form-select:focus,
+        .preview-form .form-check-input:focus {
+          border-color: #dee2e6 !important;
+          box-shadow: none !important;
+        }
+        .preview-form .form-check-input {
+          appearance: auto !important;
+          -webkit-appearance: auto !important;
+        }
+        .preview-form .form-check-input[type="radio"] {
+          border-radius: 50% !important;
+        }
+      `}</style>
 
       <div className="container py-4">
         {/* Form Title */}
@@ -35,7 +55,7 @@ export const FormPreview: React.FC = () => {
 
         {/* Form Body */}
         <div id="formBody">
-          <form name="ilgform" method="post">
+          <form name="ilgform" method="post" className="preview-form">
             <div className="ebas-form-questions mb-5" id="questions">
               {form.children.map((section) => (
                 <SectionPreview key={section.id} section={section} />
@@ -200,15 +220,16 @@ const QuestionInput: React.FC<{ question: FormQuestion; options: FormOption[] }>
     case 'radio':
     case 'radioseperate':
       return (
-        <div className={type === 'radioseperate' ? '' : 'd-flex gap-3'}>
+        <div className={type === 'radioseperate' ? '' : 'd-flex gap-3 justify-content-start'}>
           {options.map((opt) => (
-            <div key={opt.id} className="form-check">
+            <div key={opt.id} className="form-check form-check-inline">
               <input
                 type="radio"
                 className="form-check-input"
                 id={opt.id}
                 name={`question[${id}]`}
                 value={opt.value}
+                style={{ appearance: 'auto' }}
               />
               <label className="form-check-label" htmlFor={opt.id}>
                 {opt.text}
@@ -400,7 +421,7 @@ const ConditionSetPreview: React.FC<{ conditionSet: FormConditionSet }> = ({ con
 
 // Conditional Preview
 const ConditionalPreview: React.FC<{ conditional: FormConditional }> = ({ conditional }) => (
-  <div className="ms-4 ps-3 border-start border-2 border-info">
+  <div className="ms-4 ps-3 border-start border-2 border-secondary-subtle">
     {conditional.children.map((child) => (
       <NodePreview key={child.id} node={child} />
     ))}
