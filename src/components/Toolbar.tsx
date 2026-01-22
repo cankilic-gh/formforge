@@ -55,7 +55,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       const confirmed = await showConfirm('New Form', 'Create new form? Unsaved changes will be lost.');
       if (!confirmed) return;
     }
-    const title = await showPrompt('New Form', 'Enter form title:', 'Character & Fitness Questionnaire');
+    const title = await showPrompt('New Form', 'Enter form title:', 'Character and Fitness Questionnaire');
     if (title) {
       setForm(createEmptyForm(title));
     }

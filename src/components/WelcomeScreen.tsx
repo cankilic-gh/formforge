@@ -12,7 +12,7 @@ export const WelcomeScreen: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleNewForm = async () => {
-    const title = await showPrompt('New Form', 'Enter form title:', 'Character & Fitness Questionnaire');
+    const title = await showPrompt('New Form', 'Enter form title:', 'Character and Fitness Questionnaire');
     if (title) {
       setForm(createEmptyForm(title));
     }

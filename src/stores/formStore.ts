@@ -55,6 +55,7 @@ interface FormState {
   addNote: (parentId: string, text: string) => void;
   addIncludeForm: (parentId: string, formName: string, title: string) => void;
   addRequiredDoc: (parentId: string, title: string) => void;
+  addAddressSet: (parentId: string) => void;
 
   updateNode: (nodeId: string, updates: Partial<FormNode>) => void;
   deleteNode: (nodeId: string) => void;
@@ -305,7 +306,7 @@ export const useFormStore = create<FormState>()(
           const newSubSection: FormSubSection = {
             id: subsectionId,
             nodeType: 'subsection',
-            title: 'General Information',
+            title: 'New Subsection',
             showInBarAdmin: false,
             children: [],
           };
@@ -321,8 +322,9 @@ export const useFormStore = create<FormState>()(
           const updatedForm = deepClone(get().form!);
           updatedForm.children.push(newSection);
 
-          // Auto-expand the new section
+          // Auto-expand questionnaire and the new section to show subsection
           const expanded = new Set(get().expandedNodes);
+          expanded.add(updatedForm.id);
           expanded.add(sectionId);
 
           set({ form: updatedForm, expandedNodes: expanded, selectedNodeId: subsectionId });
@@ -611,6 +613,62 @@ export const useFormStore = create<FormState>()(
             const expanded = new Set(get().expandedNodes);
             expanded.add(parentId);
             set({ form: updatedForm, selectedNodeId: newRequiredDoc.id, expandedNodes: expanded });
+            get().saveToHistory();
+          }
+        },
+
+        addAddressSet: (parentId) => {
+          const form = get().form;
+          if (!form) return;
+
+          // Helper to create address question
+          const createAddressQuestion = (label: string, type: QuestionType, required: boolean): FormQuestion => {
+            const questionId = generateId();
+            const descId = generateId();
+            return {
+              id: questionId,
+              nodeType: 'question',
+              type,
+              format: '',
+              required,
+              triggerValue: '',
+              comment: '',
+              maxlength: type === 'char' ? 500 : 0,
+              refname: '',
+              appType: '',
+              appTypeTrigger: '',
+              isAmended: false,
+              validatorClass: '',
+              validationMessage: '',
+              ncbeName: '',
+              ncbeCurrently: false,
+              ilgName: '',
+              children: [
+                { id: descId, nodeType: 'description', prefix: '', text: label },
+              ],
+            };
+          };
+
+          // Create all address fields
+          const addressFields: FormQuestion[] = [
+            createAddressQuestion('Address 1', 'char', true),
+            createAddressQuestion('Address 2', 'char', false),
+            createAddressQuestion('City', 'char', true),
+            createAddressQuestion('State', 'state', true),
+            createAddressQuestion('County', 'county', true),
+            createAddressQuestion('Country', 'country', true),
+            createAddressQuestion('Zip', 'zip', true),
+          ];
+
+          // Now clone from updated state
+          const updatedForm = deepClone(get().form!);
+          const parent = findNodeRecursive(updatedForm, parentId);
+
+          if (parent && 'children' in parent) {
+            (parent.children as FormNode[]).push(...addressFields);
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(parentId);
+            set({ form: updatedForm, selectedNodeId: addressFields[0].id, expandedNodes: expanded });
             get().saveToHistory();
           }
         },

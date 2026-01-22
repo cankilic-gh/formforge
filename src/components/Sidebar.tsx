@@ -48,6 +48,7 @@ export const Sidebar: React.FC = () => {
     addNote,
     addIncludeForm,
     addRequiredDoc,
+    addAddressSet,
   } = useFormStore();
 
   const { showPrompt } = useModal();
@@ -285,7 +286,7 @@ export const Sidebar: React.FC = () => {
       label: 'Address Set',
       icon: MapPin,
       color: 'text-rose-600',
-      action: () => {},
+      action: () => selectedNodeId && canAddToSelected && addAddressSet(selectedNodeId),
       disabled: !canAddToSelected,
     },
   ];
