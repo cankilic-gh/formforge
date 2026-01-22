@@ -245,38 +245,59 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
       {typeMeta?.hasOptions && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-gray-400">Options</label>
+            <label className="text-xs font-medium text-gray-400">Options ({options.length})</label>
             <button onClick={addOption} className="text-xs text-forge-cyan hover:underline flex items-center gap-1">
               <Plus className="w-3 h-3" /> Add Option
             </button>
           </div>
           <div className="space-y-2">
-            {options.map((option) => (
-              <div key={option.id} className="flex items-center gap-2 bg-white/5 rounded-lg p-2">
-                <GripVertical className="w-3 h-3 text-gray-600 cursor-move" />
-                <input
-                  type="text"
-                  value={option.value}
-                  onChange={(e) => updateOption(option.id, { value: e.target.value })}
-                  className="w-20 text-xs"
-                  placeholder="value"
-                />
-                <input
-                  type="text"
-                  value={option.text}
-                  onChange={(e) => updateOption(option.id, { text: e.target.value })}
-                  className="flex-1 text-xs"
-                  placeholder="label"
-                />
-                <button
-                  onClick={() => deleteOption(option.id)}
-                  className="p-1 hover:bg-red-500/20 rounded"
-                >
-                  <Trash2 className="w-3 h-3 text-red-400" />
-                </button>
+            {options.map((option, index) => (
+              <div key={option.id} className="bg-white/5 rounded-lg p-2 space-y-2">
+                {/* Option Header with ID */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <GripVertical className="w-3 h-3 text-gray-600 cursor-move" />
+                    <span className="text-[10px] text-gray-500">#{index + 1}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-forge-cyan font-mono">ID: {option.id}</span>
+                    <button
+                      onClick={() => deleteOption(option.id)}
+                      className="p-1 hover:bg-red-500/20 rounded"
+                    >
+                      <Trash2 className="w-3 h-3 text-red-400" />
+                    </button>
+                  </div>
+                </div>
+                {/* Option Fields */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <label className="text-[9px] text-gray-500 block mb-0.5">Value</label>
+                    <input
+                      type="text"
+                      value={option.value}
+                      onChange={(e) => updateOption(option.id, { value: e.target.value })}
+                      className="w-full text-xs"
+                      placeholder="value"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[9px] text-gray-500 block mb-0.5">Label</label>
+                    <input
+                      type="text"
+                      value={option.text}
+                      onChange={(e) => updateOption(option.id, { text: e.target.value })}
+                      className="w-full text-xs"
+                      placeholder="label"
+                    />
+                  </div>
+                </div>
               </div>
             ))}
           </div>
+          {options.length === 0 && (
+            <p className="text-[10px] text-gray-500 italic">No options yet. Click "Add Option" to create one.</p>
+          )}
         </div>
       )}
 
