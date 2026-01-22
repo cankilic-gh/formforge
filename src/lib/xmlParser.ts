@@ -502,12 +502,21 @@ export const buildXML = (form: FormQuestionnaire): string => {
   return builder.build(xmlObj);
 };
 
+// Generate a random 5-digit suffix for new forms
+const generateSuffix = (): string => {
+  return Math.floor(10000 + Math.random() * 90000).toString();
+};
+
 // Create empty form
-export const createEmptyForm = (title: string = 'New Form'): FormQuestionnaire => ({
-  id: generateId(),
-  nodeType: 'questionnaire',
-  title,
-  suffix: '00001',
-  nextId: 1000,
-  children: [],
-});
+// ID format: nextId + suffix (e.g., 1 + 00001 = 100001)
+export const createEmptyForm = (title: string = 'New Form'): FormQuestionnaire => {
+  const suffix = generateSuffix();
+  return {
+    id: `1${suffix}`, // Questionnaire gets ID 1, so 1 + suffix
+    nodeType: 'questionnaire',
+    title,
+    suffix,
+    nextId: 2, // Next item will be 2 + suffix = 2xxxxx
+    children: [],
+  };
+};

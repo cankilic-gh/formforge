@@ -120,10 +120,11 @@ export const useFormStore = create<FormState>()(
   persist(
     (set, get) => {
       // ID generator that uses form's suffix and nextId
+      // Format: nextId + suffix (e.g., nextId=2, suffix=00001 -> 200001)
       const generateId = (): string => {
         const form = get().form;
         if (form) {
-          const id = `${form.suffix}${form.nextId.toString().padStart(2, '0')}`;
+          const id = `${form.nextId}${form.suffix}`;
           // Update nextId in form
           set((state) => ({
             form: state.form ? { ...state.form, nextId: state.form.nextId + 1 } : null,
