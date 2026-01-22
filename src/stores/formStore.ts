@@ -355,7 +355,10 @@ export const useFormStore = create<FormState>()(
           if (parent && 'children' in parent) {
             const newQuestion = createDefaultQuestion(type);
             (parent.children as FormNode[]).push(newQuestion);
-            set({ form: updatedForm, selectedNodeId: newQuestion.id });
+            // Auto-expand parent to show the new question
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(parentId);
+            set({ form: updatedForm, selectedNodeId: newQuestion.id, expandedNodes: expanded });
             get().saveToHistory();
           }
         },
@@ -379,7 +382,10 @@ export const useFormStore = create<FormState>()(
               newQuestion.format = format;
             }
             (parent.children as FormNode[]).push(newQuestion);
-            set({ form: updatedForm });
+            // Auto-expand parent
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(parentId);
+            set({ form: updatedForm, expandedNodes: expanded });
           }
         },
 
@@ -393,7 +399,10 @@ export const useFormStore = create<FormState>()(
           if (parent && 'children' in parent) {
             const newEntity = createDefaultEntity(title, entityType);
             (parent.children as FormNode[]).push(newEntity);
-            set({ form: updatedForm, selectedNodeId: newEntity.id });
+            // Auto-expand parent
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(parentId);
+            set({ form: updatedForm, selectedNodeId: newEntity.id, expandedNodes: expanded });
             get().saveToHistory();
           }
         },
@@ -408,7 +417,10 @@ export const useFormStore = create<FormState>()(
           if (parent && 'children' in parent) {
             const newConditionSet = createDefaultConditionSet();
             (parent.children as FormNode[]).push(newConditionSet);
-            set({ form: updatedForm, selectedNodeId: newConditionSet.id });
+            // Auto-expand parent
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(parentId);
+            set({ form: updatedForm, selectedNodeId: newConditionSet.id, expandedNodes: expanded });
             get().saveToHistory();
           }
         },
@@ -428,7 +440,10 @@ export const useFormStore = create<FormState>()(
               children: [],
             };
             parent.children.push(newConditional);
-            set({ form: updatedForm, selectedNodeId: newConditional.id });
+            // Auto-expand parent
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(conditionSetId);
+            set({ form: updatedForm, selectedNodeId: newConditional.id, expandedNodes: expanded });
             get().saveToHistory();
           }
         },
