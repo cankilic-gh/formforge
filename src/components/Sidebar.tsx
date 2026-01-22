@@ -1,162 +1,278 @@
 'use client';
 
 import { useFormStore } from '@/stores/formStore';
-import { QUESTION_TYPE_META } from '@/types/form';
 import {
-  Type,
-  AlignLeft,
-  Hash,
-  Circle,
-  ChevronDown,
-  Calendar,
-  MapPin,
-  Globe,
-  GraduationCap,
-  PenTool,
-  Info,
-  FolderPlus,
+  FolderOpen,
+  Folder,
   Layers,
   GitBranch,
-  List,
+  GitMerge,
+  CircleDot,
+  MessageSquare,
+  Type,
+  ListChecks,
+  AlertTriangle,
+  FileInput,
+  FileText,
+  StickyNote,
+  Link,
+  MapPin,
+  CheckSquare,
+  User,
 } from 'lucide-react';
 
-const iconMap: Record<string, React.ElementType> = {
-  Type,
-  AlignLeft,
-  Hash,
-  Circle,
-  CircleDot: Circle,
-  ChevronDown,
-  Calendar,
-  CalendarPlus: Calendar,
-  CalendarMinus: Calendar,
-  Clock: Calendar,
-  MapPin,
-  Globe,
-  Map: MapPin,
-  Mail: Type,
-  GraduationCap,
-  Building: GraduationCap,
-  PenTool,
-  User: Type,
-  FileText: Type,
-  Info,
-};
+interface ToolItem {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  color: string;
+  action?: () => void;
+  disabled?: boolean;
+}
 
 export const Sidebar: React.FC = () => {
-  const { form, selectedNodeId, addSection, addQuestion, addEntity, addConditionSet } = useFormStore();
+  const {
+    form,
+    selectedNodeId,
+    findNodeById,
+    addSection,
+    addSubSection,
+    addQuestion,
+    addEntity,
+    addConditionSet,
+  } = useFormStore();
 
-  const handleDragStart = (e: React.DragEvent, type: string, data: string) => {
-    e.dataTransfer.setData('application/formforge-type', type);
-    e.dataTransfer.setData('application/formforge-data', data);
-    e.dataTransfer.effectAllowed = 'copy';
+  const selectedNode = selectedNodeId ? findNodeById(selectedNodeId) : null;
+  const selectedNodeType = selectedNode?.nodeType;
+
+  // Check if we can add children to selected node
+  const canAddToSelected = selectedNodeType && [
+    'questionnaire',
+    'section',
+    'subsection',
+    'entity',
+    'conditionset',
+    'conditional',
+  ].includes(selectedNodeType);
+
+  const handleAddSection = () => {
+    if (!form) return;
+    const title = prompt('Section title:', 'New Section');
+    if (title) addSection(title);
   };
 
-  const groupedTypes = {
-    text: QUESTION_TYPE_META.filter((t) => t.category === 'text'),
-    selection: QUESTION_TYPE_META.filter((t) => t.category === 'selection'),
-    date: QUESTION_TYPE_META.filter((t) => t.category === 'date'),
-    location: QUESTION_TYPE_META.filter((t) => t.category === 'location'),
-    special: QUESTION_TYPE_META.filter((t) => t.category === 'special'),
+  const handleAddSubsection = () => {
+    if (!selectedNodeId || selectedNodeType !== 'section') return;
+    const title = prompt('Subsection title:', 'New Subsection');
+    if (title) addSubSection(selectedNodeId, title);
   };
+
+  const handleAddEntity = (type: 'single' | 'addmore') => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    const title = prompt('Entity title:', type === 'addmore' ? 'New Repeatable Group' : 'New Group');
+    if (title) addEntity(selectedNodeId, title, type);
+  };
+
+  const handleAddQuestion = () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    addQuestion(selectedNodeId, 'char');
+  };
+
+  const handleAddConditionSet = () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    addConditionSet(selectedNodeId);
+  };
+
+  const tools: ToolItem[] = [
+    {
+      id: 'section',
+      label: 'Section',
+      icon: FolderOpen,
+      color: 'text-green-400',
+      action: handleAddSection,
+      disabled: !form,
+    },
+    {
+      id: 'subsection',
+      label: 'Subsection',
+      icon: Folder,
+      color: 'text-teal-400',
+      action: handleAddSubsection,
+      disabled: selectedNodeType !== 'section',
+    },
+    {
+      id: 'entity',
+      label: 'Entity',
+      icon: Layers,
+      color: 'text-purple-400',
+      action: () => handleAddEntity('single'),
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'entity-addmore',
+      label: 'Entity (Addmore)',
+      icon: ListChecks,
+      color: 'text-purple-500',
+      action: () => handleAddEntity('addmore'),
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'conditionset',
+      label: 'Condition Set',
+      icon: GitBranch,
+      color: 'text-yellow-400',
+      action: handleAddConditionSet,
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'conditional',
+      label: 'Conditional',
+      icon: GitMerge,
+      color: 'text-yellow-500',
+      action: () => {}, // TODO: Add conditional to conditionset
+      disabled: selectedNodeType !== 'conditionset',
+    },
+    {
+      id: 'question',
+      label: 'Question',
+      icon: CircleDot,
+      color: 'text-blue-400',
+      action: handleAddQuestion,
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'option',
+      label: 'Option',
+      icon: CheckSquare,
+      color: 'text-blue-300',
+      action: () => {}, // TODO: Add option to question
+      disabled: selectedNodeType !== 'question',
+    },
+    {
+      id: 'description',
+      label: 'Description',
+      icon: MessageSquare,
+      color: 'text-gray-400',
+      action: () => {}, // TODO: Add description
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'simpletext',
+      label: 'Simple Text',
+      icon: Type,
+      color: 'text-gray-500',
+      action: () => {},
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'warning',
+      label: 'Warning',
+      icon: AlertTriangle,
+      color: 'text-red-400',
+      action: () => {},
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'note',
+      label: 'Note',
+      icon: StickyNote,
+      color: 'text-orange-400',
+      action: () => {},
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'validation',
+      label: 'Validation',
+      icon: CheckSquare,
+      color: 'text-emerald-400',
+      action: () => {},
+      disabled: selectedNodeType !== 'questionnaire',
+    },
+    {
+      id: 'includeform',
+      label: 'Include Form',
+      icon: FileInput,
+      color: 'text-cyan-400',
+      action: () => {},
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'requireddoc',
+      label: 'Required Doc',
+      icon: FileText,
+      color: 'text-pink-400',
+      action: () => {},
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'profilereference',
+      label: 'Profile Reference',
+      icon: User,
+      color: 'text-indigo-400',
+      action: () => selectedNodeId && canAddToSelected && addQuestion(selectedNodeId, 'profilereference'),
+      disabled: !canAddToSelected,
+    },
+    {
+      id: 'reference',
+      label: 'Reference',
+      icon: Link,
+      color: 'text-sky-400',
+      action: () => {},
+      disabled: selectedNodeType !== 'question',
+    },
+    {
+      id: 'addressset',
+      label: 'Address Set',
+      icon: MapPin,
+      color: 'text-rose-400',
+      action: () => {},
+      disabled: !canAddToSelected,
+    },
+  ];
 
   return (
-    <aside className="w-64 border-r border-white/5 flex flex-col overflow-hidden bg-black/20">
+    <aside className="w-56 border-r border-white/5 flex flex-col overflow-hidden bg-black/20">
       {/* Header */}
-      <div className="p-4 border-b border-white/5">
+      <div className="p-3 border-b border-white/5">
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          Components
+          Tools
         </h2>
       </div>
 
-      {/* Components list */}
-      <div className="flex-1 overflow-auto p-2 space-y-4">
-        {/* Structure */}
-        <div>
-          <h3 className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider px-2 mb-2">
-            Structure
-          </h3>
-          <div className="space-y-1">
-            <button
-              onClick={() => form && addSection('New Section')}
-              disabled={!form}
-              draggable
-              onDragStart={(e) => handleDragStart(e, 'section', 'New Section')}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors disabled:opacity-30"
-            >
-              <FolderPlus className="w-4 h-4 text-forge-green" />
-              Section
-            </button>
-
-            <button
-              onClick={() => selectedNodeId && addEntity(selectedNodeId, 'New Entity', 'single')}
-              disabled={!selectedNodeId}
-              draggable
-              onDragStart={(e) => handleDragStart(e, 'entity', 'single')}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors disabled:opacity-30"
-            >
-              <Layers className="w-4 h-4 text-forge-purple" />
-              Entity (Single)
-            </button>
-
-            <button
-              onClick={() => selectedNodeId && addEntity(selectedNodeId, 'New Repeatable', 'addmore')}
-              disabled={!selectedNodeId}
-              draggable
-              onDragStart={(e) => handleDragStart(e, 'entity', 'addmore')}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors disabled:opacity-30"
-            >
-              <List className="w-4 h-4 text-forge-purple" />
-              Entity (Addmore)
-            </button>
-
-            <button
-              onClick={() => selectedNodeId && addConditionSet(selectedNodeId)}
-              disabled={!selectedNodeId}
-              draggable
-              onDragStart={(e) => handleDragStart(e, 'conditionset', '')}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors disabled:opacity-30"
-            >
-              <GitBranch className="w-4 h-4 text-forge-yellow" />
-              Condition Set
-            </button>
-          </div>
+      {/* Tools list */}
+      <div className="flex-1 overflow-auto p-2">
+        <div className="space-y-0.5">
+          {tools.map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <button
+                key={tool.id}
+                onClick={tool.action}
+                disabled={tool.disabled}
+                className={`
+                  w-full flex items-center gap-2 px-3 py-2 text-xs rounded-md transition-colors
+                  ${tool.disabled
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }
+                `}
+              >
+                <Icon className={`w-4 h-4 ${tool.disabled ? 'text-gray-700' : tool.color}`} />
+                {tool.label}
+              </button>
+            );
+          })}
         </div>
-
-        {/* Question Types */}
-        {Object.entries(groupedTypes).map(([category, types]) => (
-          <div key={category}>
-            <h3 className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider px-2 mb-2">
-              {category}
-            </h3>
-            <div className="space-y-1">
-              {types.map((meta) => {
-                const Icon = iconMap[meta.icon] || Type;
-                return (
-                  <button
-                    key={meta.type}
-                    onClick={() => selectedNodeId && addQuestion(selectedNodeId, meta.type)}
-                    disabled={!selectedNodeId}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, 'question', meta.type)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors disabled:opacity-30"
-                  >
-                    <Icon className="w-4 h-4 text-blue-400" />
-                    {meta.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
       </div>
 
-      {/* Help text */}
-      <div className="p-4 border-t border-white/5">
+      {/* Context info */}
+      <div className="p-3 border-t border-white/5 bg-black/20">
         <p className="text-[10px] text-gray-600">
-          {selectedNodeId
-            ? 'Click or drag to add component'
-            : 'Select a node to add components'}
+          {selectedNode ? (
+            <>Selected: <span className="text-gray-400">{selectedNodeType}</span></>
+          ) : (
+            'Select a node to add elements'
+          )}
         </p>
       </div>
     </aside>
