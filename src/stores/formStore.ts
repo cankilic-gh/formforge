@@ -233,17 +233,33 @@ export const useFormStore = create<FormState>()(
         const form = get().form;
         if (!form) return;
 
-        const newSection: FormSection = {
-          id: generateId(),
-          nodeType: 'section',
-          title,
+        const sectionId = generateId();
+        const subsectionId = generateId();
+
+        const newSubSection: FormSubSection = {
+          id: subsectionId,
+          nodeType: 'subsection',
+          title: 'General Information',
           showInBarAdmin: false,
           children: [],
         };
 
+        const newSection: FormSection = {
+          id: sectionId,
+          nodeType: 'section',
+          title,
+          showInBarAdmin: false,
+          children: [newSubSection],
+        };
+
         const updatedForm = deepClone(form);
         updatedForm.children.push(newSection);
-        set({ form: updatedForm });
+
+        // Auto-expand the new section
+        const expanded = new Set(get().expandedNodes);
+        expanded.add(sectionId);
+
+        set({ form: updatedForm, expandedNodes: expanded, selectedNodeId: subsectionId });
         get().saveToHistory();
       },
 
