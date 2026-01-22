@@ -16,8 +16,6 @@ import {
   Clipboard,
   Trash2,
   Hash,
-  Settings,
-  Sun,
   Hammer,
   Save,
   Eye,
@@ -243,8 +241,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
             disabled={!form}
             active={isPreviewing}
           />
-          <ToolbarButton icon={Settings} label="Settings" onClick={() => {}} />
-          <ToolbarButton icon={Sun} label="Light Mode" onClick={() => {}} active />
         </ToolbarGroup>
 
         <input
