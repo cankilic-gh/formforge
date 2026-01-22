@@ -80,7 +80,7 @@ export const Sidebar: React.FC = () => {
 
   const handleAddQuestion = () => {
     if (!selectedNodeId || !canAddToSelected) return;
-    addQuestion(selectedNodeId, 'char');
+    addQuestion(selectedNodeId, 'radio');
   };
 
   const handleAddConditionSet = () => {

@@ -136,33 +136,49 @@ export const useFormStore = create<FormState>()(
       };
 
       // Create default question
-      const createDefaultQuestion = (type: QuestionType): FormQuestion => ({
-        id: generateId(),
-        nodeType: 'question',
-        type,
-        format: '',
-        required: false,
-        triggerValue: '',
-        comment: '',
-        maxlength: type === 'char' ? 500 : type === 'text' ? 5000 : 0,
-        refname: '',
-        appType: '',
-        appTypeTrigger: '',
-        isAmended: false,
-        validatorClass: '',
-        validationMessage: '',
-        ncbeName: '',
-        ncbeCurrently: false,
-        ilgName: '',
-        children: [
+      const createDefaultQuestion = (type: QuestionType): FormQuestion => {
+        const questionId = generateId();
+        const descId = generateId();
+
+        // Base children with description
+        const children: FormQuestion['children'] = [
           {
-            id: generateId(),
+            id: descId,
             nodeType: 'description',
             prefix: '',
             text: 'New Question',
           },
-        ],
-      });
+        ];
+
+        // Add Yes/No options for radio and select types
+        if (type === 'radio' || type === 'radioseperate' || type === 'select') {
+          children.push(
+            { id: generateId(), nodeType: 'option', value: 'yes', text: 'Yes' },
+            { id: generateId(), nodeType: 'option', value: 'no', text: 'No' }
+          );
+        }
+
+        return {
+          id: questionId,
+          nodeType: 'question',
+          type,
+          format: '',
+          required: false,
+          triggerValue: '',
+          comment: '',
+          maxlength: type === 'char' ? 500 : type === 'text' ? 5000 : 0,
+          refname: '',
+          appType: '',
+          appTypeTrigger: '',
+          isAmended: false,
+          validatorClass: '',
+          validationMessage: '',
+          ncbeName: '',
+          ncbeCurrently: false,
+          ilgName: '',
+          children,
+        };
+      };
 
       // Create default entity
       const createDefaultEntity = (title: string, type: 'single' | 'addmore'): FormEntity => ({
