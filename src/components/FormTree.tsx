@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
 import { FormNode, FormQuestion, FormEntity, FormConditionSet, FormSection, FormSubSection } from '@/types/form';
@@ -168,10 +168,9 @@ interface TreeNodeProps {
   setDragState: (state: DragState) => void;
   parentId: string | null;
   index: number;
-  dropProcessedRef: React.MutableRefObject<boolean>;
 }
 
-const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragState, parentId, index, dropProcessedRef }) => {
+const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragState, parentId, index }) => {
   const {
     selectedNodeId,
     selectNode,
@@ -234,7 +233,6 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
     }
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', node.id);
-    dropProcessedRef.current = false; // Reset for new drag operation
     setDragState({ draggedNodeId: node.id, dropTargetId: null, dropPosition: null });
   };
 
@@ -292,20 +290,23 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
     e.preventDefault();
     e.stopPropagation();
 
-    // Prevent multiple drop handlers from processing the same drop
-    if (dropProcessedRef.current) return;
-    dropProcessedRef.current = true;
+    // Capture current drag state before any changes
+    const { draggedNodeId, dropPosition } = dragState;
 
-    if (!dragState.draggedNodeId || !dragState.dropPosition) return;
-    if (dragState.draggedNodeId === node.id) return;
+    // Immediately clear drag state to prevent duplicate processing
+    setDragState({ draggedNodeId: null, dropTargetId: null, dropPosition: null });
 
-    const draggedNode = findNodeById(dragState.draggedNodeId);
+    // Validate we have what we need
+    if (!draggedNodeId || !dropPosition) return;
+    if (draggedNodeId === node.id) return;
+
+    const draggedNode = findNodeById(draggedNodeId);
     if (!draggedNode) return;
 
-    if (dragState.dropPosition === 'inside') {
+    if (dropPosition === 'inside') {
       // Move inside this node (as first child)
       if (canAcceptChild(node.nodeType, draggedNode.nodeType)) {
-        moveNode(dragState.draggedNodeId, node.id, 0);
+        moveNode(draggedNodeId, node.id, 0);
       }
     } else if (parentId) {
       // Move before or after this node (sibling position)
@@ -313,23 +314,21 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
       const targetParent = findNodeById(parentId);
       if (!targetParent || !canAcceptChild(targetParent.nodeType, draggedNode.nodeType)) return;
 
-      let targetIndex = dragState.dropPosition === 'before' ? index : index + 1;
+      let targetIndex = dropPosition === 'before' ? index : index + 1;
 
       // If moving within the same parent and dragged node comes before target,
       // we need to adjust the index since removing it will shift indices
-      const draggedParent = findParentNode(dragState.draggedNodeId);
+      const draggedParent = findParentNode(draggedNodeId);
       if (draggedParent && draggedParent.id === parentId && 'children' in draggedParent) {
         const children = (draggedParent as { children: FormNode[] }).children;
-        const draggedIndex = children.findIndex((c) => c.id === dragState.draggedNodeId);
+        const draggedIndex = children.findIndex((c) => c.id === draggedNodeId);
         if (draggedIndex !== -1 && draggedIndex < index) {
           targetIndex--;
         }
       }
 
-      moveNode(dragState.draggedNodeId, parentId, targetIndex);
+      moveNode(draggedNodeId, parentId, targetIndex);
     }
-
-    setDragState({ draggedNodeId: null, dropTargetId: null, dropPosition: null });
   };
 
   // Don't show certain node types in tree
@@ -456,7 +455,6 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
                 setDragState={setDragState}
                 parentId={node.id}
                 index={idx}
-                dropProcessedRef={dropProcessedRef}
               />
             ))}
         </div>
@@ -472,7 +470,6 @@ export const FormTree: React.FC = () => {
     dropTargetId: null,
     dropPosition: null,
   });
-  const dropProcessedRef = useRef(false);
 
   if (!form) return null;
 
@@ -485,7 +482,6 @@ export const FormTree: React.FC = () => {
         setDragState={setDragState}
         parentId={null}
         index={0}
-        dropProcessedRef={dropProcessedRef}
       />
     </div>
   );
