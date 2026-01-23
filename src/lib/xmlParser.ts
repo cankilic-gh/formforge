@@ -544,8 +544,8 @@ export const buildXML = (form: FormQuestionnaire): string => {
 
 // Create empty form
 // ID format: nextId + suffix (e.g., 1 + 00001 = 100001)
-export const createEmptyForm = (title: string = 'New Form'): FormQuestionnaire => {
-  const suffix = generateSuffix();
+export const createEmptyForm = (title: string = 'New Form', customSuffix?: string): FormQuestionnaire => {
+  const suffix = customSuffix || generateSuffix();
   return {
     id: `1${suffix}`, // Questionnaire gets ID 1, so 1 + suffix
     nodeType: 'questionnaire',

@@ -73,9 +73,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       if (!confirmed) return;
     }
     const title = await showPrompt('New Form', 'Enter form title:', 'Character and Fitness Questionnaire');
-    if (title) {
-      setForm(createEmptyForm(title));
-    }
+    if (!title) return;
+
+    const suffix = await showPrompt('Form Suffix', 'Enter form suffix (5 digits):', '00001');
+    if (!suffix) return;
+
+    setForm(createEmptyForm(title, suffix));
   };
 
   const handleOpen = () => {
