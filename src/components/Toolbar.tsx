@@ -48,9 +48,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   const { showAlert, showConfirm, showPrompt } = useModal();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const [savedHistoryIndex, setSavedHistoryIndex] = useState(-1);
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
   const [xmlContent, setXmlContent] = useState('');
   const [copied, setCopied] = useState(false);
+
+  const hasUnsavedChanges = form && historyIndex !== savedHistoryIndex;
 
   const handleShowXml = () => {
     if (!form) return;
@@ -68,20 +72,58 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   // File Management
   const handleNew = async () => {
-    if (form) {
-      const confirmed = await showConfirm('New Form', 'Create new form? Unsaved changes will be lost.');
-      if (!confirmed) return;
+    if (hasUnsavedChanges) {
+      const shouldSave = await showConfirm('Unsaved Changes', 'Do you want to save changes before creating a new form?');
+      if (shouldSave) {
+        await handleSave();
+      }
     }
+
     const title = await showPrompt('New Form', 'Enter form title:', 'Character and Fitness Questionnaire');
     if (!title) return;
 
     const suffix = await showPrompt('Form Suffix', 'Enter form suffix (5 digits):', '00001');
     if (!suffix) return;
 
+    fileHandleRef.current = null;
+    setSavedHistoryIndex(-1);
     setForm(createEmptyForm(title, suffix));
   };
 
-  const handleOpen = () => {
+  const handleOpen = async () => {
+    if (hasUnsavedChanges) {
+      const shouldSave = await showConfirm('Unsaved Changes', 'Do you want to save changes before opening another file?');
+      if (shouldSave) {
+        await handleSave();
+      }
+    }
+
+    // Try File System Access API first
+    if ('showOpenFilePicker' in window) {
+      try {
+        const [handle] = await (window as typeof window & { showOpenFilePicker: (options?: object) => Promise<FileSystemFileHandle[]> }).showOpenFilePicker({
+          types: [{
+            description: 'XML Files',
+            accept: { 'application/xml': ['.xml'] },
+          }],
+        });
+        const file = await handle.getFile();
+        const xml = await file.text();
+        const parsed = parseXML(xml);
+        if (parsed) {
+          fileHandleRef.current = handle;
+          setForm(parsed);
+          setSavedHistoryIndex(0);
+        } else {
+          await showAlert('Error', 'Failed to parse XML file. Please check the file format.');
+        }
+        return;
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+      }
+    }
+
+    // Fallback to file input
     fileInputRef.current?.click();
   };
 
@@ -94,7 +136,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       const xml = event.target?.result as string;
       const parsed = parseXML(xml);
       if (parsed) {
+        fileHandleRef.current = null; // No handle for legacy file input
         setForm(parsed);
+        setSavedHistoryIndex(0);
       } else {
         await showAlert('Error', 'Failed to parse XML file. Please check the file format.');
       }
@@ -114,9 +158,31 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   const handleSave = async () => {
     if (!form) return;
     const xml = buildXML(form);
+
+    // If we have an existing file handle, save directly to it
+    if (fileHandleRef.current) {
+      try {
+        const writable = await fileHandleRef.current.createWritable();
+        await writable.write(xml);
+        await writable.close();
+        setSavedHistoryIndex(historyIndex);
+        return;
+      } catch (err) {
+        // Handle might be invalid, fall through to Save As
+        console.error('Failed to save to existing file:', err);
+      }
+    }
+
+    // No existing handle, do Save As
+    await handleSaveAs();
+  };
+
+  const handleSaveAs = async () => {
+    if (!form) return;
+    const xml = buildXML(form);
     const defaultName = `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
 
-    // Use File System Access API if available (allows choosing location)
+    // Use File System Access API if available
     if ('showSaveFilePicker' in window) {
       try {
         const handle = await (window as typeof window & { showSaveFilePicker: (options?: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
@@ -129,9 +195,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         const writable = await handle.createWritable();
         await writable.write(xml);
         await writable.close();
+        fileHandleRef.current = handle;
+        setSavedHistoryIndex(historyIndex);
         return;
       } catch (err) {
-        // User cancelled or API failed, fall through to legacy method
         if ((err as Error).name === 'AbortError') return;
       }
     }
@@ -144,19 +211,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     a.download = defaultName;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const handleSaveAs = async () => {
-    // Save As now uses the same logic as Save
-    await handleSave();
+    setSavedHistoryIndex(historyIndex);
   };
 
   const handleClose = async () => {
     if (!form) return;
-    const confirmed = await showConfirm('Close Form', 'Close form? Unsaved changes will be lost.');
-    if (confirmed) {
-      setForm(null);
+
+    if (hasUnsavedChanges) {
+      const shouldSave = await showConfirm('Unsaved Changes', 'Do you want to save changes before closing?');
+      if (shouldSave) {
+        await handleSave();
+      }
     }
+
+    fileHandleRef.current = null;
+    setSavedHistoryIndex(-1);
+    setForm(null);
   };
 
   // Edit
