@@ -21,8 +21,10 @@ import {
   Eye,
   EyeOff,
   Wand2,
+  Code,
+  Check,
 } from 'lucide-react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 interface ToolbarProps {
   onGenerateClick?: () => void;
@@ -46,6 +48,23 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   const { showAlert, showConfirm, showPrompt } = useModal();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
+  const [xmlContent, setXmlContent] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const handleShowXml = () => {
+    if (!form) return;
+    const xml = buildXML(form);
+    setXmlContent(xml);
+    setIsXmlModalOpen(true);
+    setCopied(false);
+  };
+
+  const handleCopyXml = async () => {
+    await navigator.clipboard.writeText(xmlContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // File Management
   const handleNew = async () => {
@@ -241,6 +260,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
             disabled={!form}
             active={isPreviewing}
           />
+          <ToolbarButton
+            icon={Code}
+            label="XML"
+            onClick={handleShowXml}
+            disabled={!form}
+          />
         </ToolbarGroup>
 
         <input
@@ -251,6 +276,40 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
           className="hidden"
         />
       </div>
+
+      {/* XML Modal */}
+      {isXmlModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={() => setIsXmlModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-[800px] max-h-[80vh] overflow-hidden border border-slate-200 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+              <Code className="w-5 h-5 text-cyan-600" />
+              <h3 className="text-lg font-semibold text-slate-800 flex-1">XML Output</h3>
+              <button
+                onClick={handleCopyXml}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+              <button
+                onClick={() => setIsXmlModalOpen(false)}
+                className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <pre className="text-xs font-mono text-slate-700 whitespace-pre-wrap break-all">{xmlContent}</pre>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Section labels */}
       <div className="h-5 flex items-center px-2 text-[10px] text-slate-400 border-t border-slate-100 bg-slate-50">

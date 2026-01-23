@@ -853,13 +853,14 @@ export const useFormStore = create<FormState>()(
           if (!form) return;
 
           const updatedForm = deepClone(form);
+          const suffix = updatedForm.suffix;
+          let counter = 1;
 
           // Recursive function to regenerate IDs for all nodes
           const regenerateIds = (node: FormNode): void => {
-            // Skip the questionnaire root - keep its ID
-            if (node.nodeType !== 'questionnaire') {
-              node.id = generateId();
-            }
+            // Assign new ID using counter + suffix format
+            node.id = `${counter}${suffix}`;
+            counter++;
 
             // Process children if they exist
             if ('children' in node && Array.isArray(node.children)) {
@@ -868,6 +869,10 @@ export const useFormStore = create<FormState>()(
           };
 
           regenerateIds(updatedForm);
+
+          // Update nextId to continue from where we left off
+          updatedForm.nextId = counter;
+
           set({ form: updatedForm, selectedNodeId: null });
           get().saveToHistory();
         },
