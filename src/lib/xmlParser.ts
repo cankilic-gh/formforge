@@ -528,7 +528,6 @@ export const buildXML = (form: FormQuestionnaire): string => {
   });
 
   const xmlObj = {
-    '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' },
     questionnaire: {
       '@_id': form.id,
       '@_nextid': String(form.nextId),
@@ -539,7 +538,8 @@ export const buildXML = (form: FormQuestionnaire): string => {
     },
   };
 
-  return builder.build(xmlObj);
+  const xmlContent = builder.build(xmlObj);
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`;
 };
 
 // Create empty form
