@@ -394,9 +394,9 @@ export const buildXML = (form: FormQuestionnaire): string => {
       '@_id': question.id,
       '@_type': question.type,
       '@_format': question.format,
-      '@_required': String(question.required),
-      '@_triggervalue': question.triggerValue,
-      '@_comment': question.comment,
+      '@_required': question.required === true ? 'true' : 'false',
+      '@_triggervalue': question.triggerValue || '',
+      '@_comment': question.comment || '',
     };
 
     if (question.maxlength) result['@_maxlength'] = String(question.maxlength);
