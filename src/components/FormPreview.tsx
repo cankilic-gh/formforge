@@ -152,6 +152,9 @@ const QuestionPreview: React.FC<{ question: FormQuestion }> = ({ question }) => 
   const options = question.children.filter((c) => c.nodeType === 'option') as FormOption[];
   const isRequired = question.required;
 
+  const shortFieldTypes = ['zip', 'ssn', 'date', 'emp_date_start', 'emp_date_end', 'res_date_start', 'res_date_end'];
+  const isShortField = shortFieldTypes.includes(question.type);
+
   return (
     <div className="row mb-3 align-items-start">
       {/* Question Number/Prefix */}
@@ -171,7 +174,7 @@ const QuestionPreview: React.FC<{ question: FormQuestion }> = ({ question }) => 
       </div>
 
       {/* Input Control */}
-      <div className="col">
+      <div className={`col ${isShortField ? 'd-flex justify-content-end' : ''}`}>
         <QuestionInput question={question} options={options} />
       </div>
     </div>
