@@ -245,28 +245,24 @@ const NodePreview: React.FC<{ node: FormNode }> = ({ node }) => {
   }
 };
 
-// Description Preview
+// Description Preview (renders HTML tags like <strong>, <u>, <em>)
 const DescriptionPreview: React.FC<{ description: FormDescription }> = ({ description }) => (
   <div className="form-row mb-2">
     <div className="qNum">{description.prefix}</div>
     <div>
-      <span className="descControl">{description.text}</span>
+      <span className="descControl" dangerouslySetInnerHTML={{ __html: description.text }} />
     </div>
   </div>
 );
 
-// Warning Preview
+// Warning Preview (renders HTML tags)
 const WarningPreview: React.FC<{ warning: FormWarning }> = ({ warning }) => (
-  <div className="alert alert-warning mb-3">
-    {warning.text}
-  </div>
+  <div className="alert alert-warning mb-3" dangerouslySetInnerHTML={{ __html: warning.text }} />
 );
 
-// Note Preview
+// Note Preview (renders HTML tags)
 const NotePreview: React.FC<{ note: FormNote }> = ({ note }) => (
-  <div className="alert alert-info mb-3">
-    {note.text}
-  </div>
+  <div className="alert alert-info mb-3" dangerouslySetInnerHTML={{ __html: note.text }} />
 );
 
 // Question Preview
@@ -285,14 +281,14 @@ const QuestionPreview: React.FC<{ question: FormQuestion }> = ({ question }) => 
         {description?.prefix && <span className="fw-bold">{description.prefix}</span>}
       </div>
 
-      {/* Label */}
+      {/* Label (renders HTML tags like <strong>, <u>, <em>) */}
       <div className={`col-4 ${isRequired ? 'text-danger' : ''}`}>
         <label htmlFor={question.id} className="form-label">
-          {description?.text || 'Question'}
+          <span dangerouslySetInnerHTML={{ __html: description?.text || 'Question' }} />
           {isRequired && <span className="text-danger">*</span>}
         </label>
         {question.comment && (
-          <small className="d-block text-muted fst-italic">{question.comment}</small>
+          <small className="d-block text-muted fst-italic" dangerouslySetInnerHTML={{ __html: question.comment }} />
         )}
       </div>
 
@@ -683,9 +679,9 @@ const ConditionSetPreview: React.FC<{ conditionSet: FormConditionSet }> = ({ con
   );
 };
 
-// Conditional Preview
+// Conditional Preview (no border, just indent)
 const ConditionalPreview: React.FC<{ conditional: FormConditional }> = ({ conditional }) => (
-  <div className="ms-4 ps-3 border-start border-2 border-primary-subtle conditional-content">
+  <div className="conditional-content">
     {conditional.children.map((child) => (
       <NodePreview key={child.id} node={child} />
     ))}
