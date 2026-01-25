@@ -273,6 +273,7 @@ const QuestionPreview: React.FC<{ question: FormQuestion }> = ({ question }) => 
 
   const shortFieldTypes = ['zip', 'ssn', 'date', 'emp_date_start', 'emp_date_end', 'res_date_start', 'res_date_end'];
   const isShortField = shortFieldTypes.includes(question.type);
+  const isRadioInline = question.type === 'radio' && options.length <= 3;
 
   return (
     <div className="row mb-3 align-items-start">
@@ -282,7 +283,7 @@ const QuestionPreview: React.FC<{ question: FormQuestion }> = ({ question }) => 
       </div>
 
       {/* Label (renders HTML tags like <strong>, <u>, <em>) */}
-      <div className={`col-4 ${isRequired ? 'text-danger' : ''}`}>
+      <div className={`${isRadioInline ? 'col' : 'col-4'} ${isRequired ? 'text-danger' : ''}`}>
         <label htmlFor={question.id} className="form-label">
           <span dangerouslySetInnerHTML={{ __html: description?.text || 'Question' }} />
           {isRequired && <span className="text-danger">*</span>}
@@ -293,7 +294,7 @@ const QuestionPreview: React.FC<{ question: FormQuestion }> = ({ question }) => 
       </div>
 
       {/* Input Control */}
-      <div className={`col ${isShortField ? 'd-flex justify-content-end' : ''}`}>
+      <div className={`${isRadioInline ? 'col-auto' : 'col'} ${isShortField ? 'd-flex justify-content-end' : ''}`}>
         <QuestionInput question={question} options={options} />
       </div>
     </div>
@@ -344,7 +345,7 @@ const QuestionInput: React.FC<{ question: FormQuestion; options: FormOption[] }>
     case 'radio':
     case 'radioseperate':
       return (
-        <div className={type === 'radioseperate' ? '' : 'd-flex gap-3 justify-content-start'}>
+        <div className={type === 'radioseperate' ? '' : 'd-flex gap-3 justify-content-end'}>
           {options.map((opt) => (
             <div key={opt.id} className="form-check form-check-inline">
               <input
