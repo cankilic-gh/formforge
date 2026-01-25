@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useMemo, createContext, useContext, useCallback } from 'react';
 import { useFormStore } from '@/stores/formStore';
 import {
   FormNode,
@@ -16,38 +17,159 @@ import {
 } from '@/types/form';
 import { US_STATES, COUNTRIES, MONTHS, generateYears } from '@/lib/formData';
 
+interface SubsectionOption {
+  id: string;
+  title: string;
+  sectionId: string;
+  sectionTitle: string;
+}
+
+// Context for preview answers (conditional logic)
+interface PreviewContextType {
+  answers: Record<string, string>;
+  setAnswer: (questionId: string, value: string) => void;
+}
+
+const PreviewContext = createContext<PreviewContextType>({
+  answers: {},
+  setAnswer: () => {},
+});
+
+const usePreviewContext = () => useContext(PreviewContext);
+
 export const FormPreview: React.FC = () => {
   const { form } = useFormStore();
+  const [selectedSubsectionId, setSelectedSubsectionId] = useState<string>('');
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  const setAnswer = useCallback((questionId: string, value: string) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  }, []);
+
+  // Derive subsection list grouped by section
+  const subsectionOptions = useMemo<SubsectionOption[]>(() => {
+    if (!form) return [];
+    return form.children.flatMap((section) =>
+      section.children.map((subsection) => ({
+        id: subsection.id,
+        title: subsection.title,
+        sectionId: section.id,
+        sectionTitle: section.title,
+      }))
+    );
+  }, [form]);
+
+  // Group subsections by section for optgroup
+  const groupedSubsections = useMemo(() => {
+    const groups: Record<string, SubsectionOption[]> = {};
+    subsectionOptions.forEach((opt) => {
+      if (!groups[opt.sectionTitle]) {
+        groups[opt.sectionTitle] = [];
+      }
+      groups[opt.sectionTitle].push(opt);
+    });
+    return groups;
+  }, [subsectionOptions]);
+
+  // Filter sections based on selection
+  const filteredSections = useMemo(() => {
+    if (!form) return [];
+    if (!selectedSubsectionId) return form.children;
+
+    return form.children
+      .map((section) => ({
+        ...section,
+        children: section.children.filter((sub) => sub.id === selectedSubsectionId),
+      }))
+      .filter((section) => section.children.length > 0);
+  }, [form, selectedSubsectionId]);
 
   if (!form) return null;
 
   return (
-    <div className="h-full overflow-auto bg-white">
-      {/* Bootstrap CSS */}
-      <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet"
-      />
-      {/* Preview-specific styles */}
-      <style>{`
-        .preview-form *:focus {
-          outline: none !important;
-          box-shadow: none !important;
-        }
-        .preview-form .form-control:focus,
-        .preview-form .form-select:focus,
-        .preview-form .form-check-input:focus {
-          border-color: #dee2e6 !important;
-          box-shadow: none !important;
-        }
-        .preview-form .form-check-input {
-          appearance: auto !important;
-          -webkit-appearance: auto !important;
-        }
-        .preview-form .form-check-input[type="radio"] {
-          border-radius: 50% !important;
-        }
-      `}</style>
+    <PreviewContext.Provider value={{ answers, setAnswer }}>
+      <div className="h-full overflow-auto bg-white">
+        {/* Bootstrap CSS */}
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+        />
+        {/* Preview-specific styles */}
+        <style>{`
+          .preview-form *:focus {
+            outline: none !important;
+            box-shadow: none !important;
+          }
+          .preview-form .form-control:focus,
+          .preview-form .form-select:focus,
+          .preview-form .form-check-input:focus {
+            border-color: #dee2e6 !important;
+            box-shadow: none !important;
+          }
+          .preview-form .form-check-input {
+            appearance: auto !important;
+            -webkit-appearance: auto !important;
+          }
+          .preview-form .form-check-input[type="radio"] {
+            border-radius: 50% !important;
+          }
+          .subsection-selector {
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            padding: 1rem;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+          }
+          .subsection-selector select {
+            min-width: 300px;
+          }
+          .conditional-content {
+            animation: fadeIn 0.2s ease-in-out;
+          }
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
+
+      {/* Subsection Selector */}
+      <div className="subsection-selector">
+        <div className="container">
+          <div className="d-flex align-items-center gap-3">
+            <label htmlFor="subsection-select" className="form-label mb-0 fw-medium text-secondary">
+              View:
+            </label>
+            <select
+              id="subsection-select"
+              className="form-select form-select-sm"
+              value={selectedSubsectionId}
+              onChange={(e) => setSelectedSubsectionId(e.target.value)}
+              style={{ width: 'auto', minWidth: '300px' }}
+            >
+              <option value="">Show All (Full Form)</option>
+              {Object.entries(groupedSubsections).map(([sectionTitle, subsections]) => (
+                <optgroup key={sectionTitle} label={sectionTitle}>
+                  {subsections.map((sub) => (
+                    <option key={sub.id} value={sub.id}>
+                      {sub.title}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {selectedSubsectionId && (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                onClick={() => setSelectedSubsectionId('')}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="container py-4">
         {/* Form Title */}
@@ -57,7 +179,7 @@ export const FormPreview: React.FC = () => {
         <div id="formBody">
           <form name="ilgform" method="post" className="preview-form">
             <div className="ebas-form-questions mb-5" id="questions">
-              {form.children.map((section) => (
+              {filteredSections.map((section) => (
                 <SectionPreview key={section.id} section={section} />
               ))}
             </div>
@@ -71,12 +193,13 @@ export const FormPreview: React.FC = () => {
         </div>
       </div>
 
-      {/* Bootstrap JS */}
-      <script
-        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-        async
-      />
-    </div>
+        {/* Bootstrap JS */}
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+          async
+        />
+      </div>
+    </PreviewContext.Provider>
   );
 };
 
@@ -184,6 +307,8 @@ const QuestionPreview: React.FC<{ question: FormQuestion }> = ({ question }) => 
 // Question Input based on type
 const QuestionInput: React.FC<{ question: FormQuestion; options: FormOption[] }> = ({ question, options }) => {
   const { type, format, id, maxlength } = question;
+  const { answers, setAnswer } = usePreviewContext();
+  const currentValue = answers[id] || '';
 
   switch (type) {
     case 'char':
@@ -232,6 +357,8 @@ const QuestionInput: React.FC<{ question: FormQuestion; options: FormOption[] }>
                 id={opt.id}
                 name={`question[${id}]`}
                 value={opt.value}
+                checked={currentValue === opt.value}
+                onChange={(e) => setAnswer(id, e.target.value)}
                 style={{ appearance: 'auto' }}
               />
               <label className="form-check-label" htmlFor={opt.id}>
@@ -244,7 +371,13 @@ const QuestionInput: React.FC<{ question: FormQuestion; options: FormOption[] }>
 
     case 'select':
       return (
-        <select className="form-select form-select-sm" id={id} name={`question[${id}]`}>
+        <select
+          className="form-select form-select-sm"
+          id={id}
+          name={`question[${id}]`}
+          value={currentValue}
+          onChange={(e) => setAnswer(id, e.target.value)}
+        >
           <option value=""></option>
           {options.map((opt) => (
             <option key={opt.id} value={opt.value}>
@@ -413,18 +546,146 @@ const EntityPreview: React.FC<{ entity: FormEntity }> = ({ entity }) => {
   );
 };
 
-// ConditionSet Preview
-const ConditionSetPreview: React.FC<{ conditionSet: FormConditionSet }> = ({ conditionSet }) => (
-  <div className="mb-3">
-    {conditionSet.children.map((child) => (
-      <NodePreview key={child.id} node={child as FormNode} />
-    ))}
-  </div>
-);
+// ConditionSet Preview with conditional logic
+const ConditionSetPreview: React.FC<{ conditionSet: FormConditionSet }> = ({ conditionSet }) => {
+  const { answers } = usePreviewContext();
+
+  // Find trigger question(s) in children
+  const triggerQuestions = conditionSet.children.filter(
+    (child) => child.nodeType === 'question'
+  ) as FormQuestion[];
+
+  // Find conditionals
+  const conditionals = conditionSet.children.filter(
+    (child) => child.nodeType === 'conditional'
+  ) as FormConditional[];
+
+  // Get trigger question IDs and their current values
+  const triggerValues = triggerQuestions.map((q) => ({
+    id: q.id,
+    value: answers[q.id] || '',
+    triggerValue: q.triggerValue,
+  }));
+
+  // Normalize value for boolean comparison (handles Yes/No, true/false, 1/0)
+  const normalizeToBoolean = (value: string): string | null => {
+    if (!value) return null;
+    const lower = value.toLowerCase();
+    if (['true', 'yes', '1'].includes(lower)) return 'true';
+    if (['false', 'no', '0'].includes(lower)) return 'false';
+    return null;
+  };
+
+  // Check if a single trigger value matches a condition
+  const valueMatchesCondition = (value: string, condition: string): boolean => {
+    if (!value) return false;
+
+    // Exact match
+    if (value === condition) return true;
+
+    // Case-insensitive match
+    if (value.toLowerCase() === condition.toLowerCase()) return true;
+
+    // Boolean normalization (Yes/No, true/false, 1/0)
+    const normalizedValue = normalizeToBoolean(value);
+    const normalizedCondition = normalizeToBoolean(condition);
+    if (normalizedValue && normalizedCondition && normalizedValue === normalizedCondition) {
+      return true;
+    }
+
+    return false;
+  };
+
+  // Check if a conditional should be visible based on operator and trigger values
+  const shouldShowConditional = (conditional: FormConditional): boolean => {
+    const condition = conditional.condition;
+
+    // No triggers answered yet
+    if (triggerValues.every((t) => !t.value)) return false;
+
+    // Switch operator: condition format is ";value1;value2;" or "value1" or multiple values
+    if (conditionSet.operator === 'switch') {
+      return triggerValues.some((t) => {
+        if (!t.value) return false;
+        // Check if condition contains the value in ;value; format
+        if (condition.includes(';')) {
+          return condition.includes(`;${t.value};`) ||
+                 condition.startsWith(`${t.value};`) ||
+                 condition.endsWith(`;${t.value}`) ||
+                 condition === t.value;
+        }
+        // Direct match for simple conditions
+        return valueMatchesCondition(t.value, condition);
+      });
+    }
+
+    // "else" operator: show when no other conditionals match (fallback)
+    if (condition === 'else' || conditionSet.operator === 'else') {
+      // This will be handled by showing else when nothing else matches
+      return true;
+    }
+
+    // "contain" operator: check if answer contains the condition string
+    if (conditionSet.operator === 'contain') {
+      return triggerValues.some((t) => {
+        if (!t.value) return false;
+        return t.value.toLowerCase().includes(condition.toLowerCase());
+      });
+    }
+
+    // "and" operator: ALL triggers must match the condition
+    if (conditionSet.operator === 'and') {
+      return triggerValues.every((t) => valueMatchesCondition(t.value, condition));
+    }
+
+    // "or" operator (default): AT LEAST ONE trigger must match
+    return triggerValues.some((t) => valueMatchesCondition(t.value, condition));
+  };
+
+  // For else conditions, check if any non-else conditional is visible
+  const hasVisibleNonElseConditional = conditionals.some((c) => {
+    if (c.condition === 'else') return false;
+    return shouldShowConditional(c);
+  });
+
+  return (
+    <div className="mb-3">
+      {/* Render trigger questions */}
+      {triggerQuestions.map((question) => (
+        <NodePreview key={question.id} node={question as FormNode} />
+      ))}
+
+      {/* Render other non-conditional children (descriptions, warnings, notes) */}
+      {conditionSet.children
+        .filter((child) => child.nodeType !== 'question' && child.nodeType !== 'conditional')
+        .map((child) => (
+          <NodePreview key={child.id} node={child as FormNode} />
+        ))}
+
+      {/* Render conditionals based on trigger value */}
+      {conditionals.map((conditional) => {
+        // Handle "else" condition - only show if no other conditional is visible
+        if (conditional.condition === 'else') {
+          if (hasVisibleNonElseConditional) return null;
+          // Only show else if at least one trigger has a value
+          if (triggerValues.every((t) => !t.value)) return null;
+          return <ConditionalPreview key={conditional.id} conditional={conditional} />;
+        }
+
+        const isVisible = shouldShowConditional(conditional);
+        if (!isVisible) return null;
+
+        return (
+          <ConditionalPreview key={conditional.id} conditional={conditional} />
+        );
+      })}
+    </div>
+  );
+};
 
 // Conditional Preview
 const ConditionalPreview: React.FC<{ conditional: FormConditional }> = ({ conditional }) => (
-  <div className="ms-4 ps-3 border-start border-2 border-secondary-subtle">
+  <div className="ms-4 ps-3 border-start border-2 border-primary-subtle conditional-content">
     {conditional.children.map((child) => (
       <NodePreview key={child.id} node={child} />
     ))}
