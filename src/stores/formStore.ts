@@ -373,7 +373,15 @@ export const useFormStore = create<FormState>()(
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            (parent.children as FormNode[]).push(newQuestion);
+            const children = parent.children as FormNode[];
+            // If there's a selected node in this parent, insert after it
+            const selectedId = get().selectedNodeId;
+            const selectedIndex = selectedId ? children.findIndex(c => c.id === selectedId) : -1;
+            if (selectedIndex !== -1) {
+              children.splice(selectedIndex + 1, 0, newQuestion);
+            } else {
+              children.push(newQuestion);
+            }
             // Auto-expand parent to show the new question
             const expanded = new Set(get().expandedNodes);
             expanded.add(parentId);
@@ -423,7 +431,15 @@ export const useFormStore = create<FormState>()(
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            (parent.children as FormNode[]).push(newEntity);
+            const children = parent.children as FormNode[];
+            // If there's a selected node in this parent, insert after it
+            const selectedId = get().selectedNodeId;
+            const selectedIndex = selectedId ? children.findIndex(c => c.id === selectedId) : -1;
+            if (selectedIndex !== -1) {
+              children.splice(selectedIndex + 1, 0, newEntity);
+            } else {
+              children.push(newEntity);
+            }
             // Auto-expand parent
             const expanded = new Set(get().expandedNodes);
             expanded.add(parentId);
@@ -444,7 +460,15 @@ export const useFormStore = create<FormState>()(
           const parent = findNodeRecursive(updatedForm, parentId);
 
           if (parent && 'children' in parent) {
-            (parent.children as FormNode[]).push(newConditionSet);
+            const children = parent.children as FormNode[];
+            // If there's a selected node in this parent, insert after it
+            const selectedId = get().selectedNodeId;
+            const selectedIndex = selectedId ? children.findIndex(c => c.id === selectedId) : -1;
+            if (selectedIndex !== -1) {
+              children.splice(selectedIndex + 1, 0, newConditionSet);
+            } else {
+              children.push(newConditionSet);
+            }
             // Auto-expand parent
             const expanded = new Set(get().expandedNodes);
             expanded.add(parentId);
@@ -868,7 +892,15 @@ export const useFormStore = create<FormState>()(
           const parent = findNodeRecursive(updatedForm, targetParentId);
 
           if (parent && 'children' in parent) {
-            (parent.children as FormNode[]).push(cloned);
+            const children = parent.children as FormNode[];
+            // If there's a selected node in this parent, insert after it
+            const selectedId = get().selectedNodeId;
+            const selectedIndex = selectedId ? children.findIndex(c => c.id === selectedId) : -1;
+            if (selectedIndex !== -1) {
+              children.splice(selectedIndex + 1, 0, cloned);
+            } else {
+              children.push(cloned);
+            }
             const expanded = new Set(get().expandedNodes);
             expanded.add(targetParentId);
             set({ form: updatedForm, selectedNodeId: cloned.id, expandedNodes: expanded });
