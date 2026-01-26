@@ -14,7 +14,10 @@ export const WelcomeScreen: React.FC = () => {
   const handleNewForm = async () => {
     const title = await showPrompt('New Form', 'Enter form title:', 'Character and Fitness Questionnaire');
     if (title) {
-      setForm(createEmptyForm(title));
+      const suffix = await showPrompt('Form Suffix', 'Enter 5-digit suffix number for IDs:', '00001');
+      if (suffix) {
+        setForm(createEmptyForm(title, suffix));
+      }
     }
   };
 

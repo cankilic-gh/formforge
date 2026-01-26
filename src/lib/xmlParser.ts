@@ -394,7 +394,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
       '@_id': question.id,
       '@_type': question.type,
       '@_format': question.format,
-      '@_required': question.required === true ? 'true' : 'false',
+      '@_required': question.required === true ? '__BOOL_TRUE__' : 'false',
       '@_triggervalue': question.triggerValue || '',
       '@_comment': question.comment || '',
     };
@@ -476,8 +476,8 @@ export const buildXML = (form: FormQuestionnaire): string => {
           '@_formname': inc.formName,
           '@_title': inc.title,
           '@_type': inc.type,
-          '@_multipleinclude': String(inc.multipleInclude),
-          '@_required': String(inc.required),
+          '@_multipleinclude': inc.multipleInclude ? '__BOOL_TRUE__' : 'false',
+          '@_required': inc.required ? '__BOOL_TRUE__' : 'false',
         };
       }
       case 'required-doc': {
@@ -485,7 +485,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
         return {
           '@_id': doc.id,
           '@_title': doc.title,
-          '@_preventsubmit': String(doc.preventSubmit),
+          '@_preventsubmit': doc.preventSubmit ? '__BOOL_TRUE__' : 'false',
         };
       }
       default:
@@ -539,7 +539,9 @@ export const buildXML = (form: FormQuestionnaire): string => {
   };
 
   const xmlContent = builder.build(xmlObj);
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`;
+  // Replace placeholder with actual 'true' value (fast-xml-parser treats 'true' as boolean attribute)
+  const fixedXml = xmlContent.replace(/__BOOL_TRUE__/g, 'true');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${fixedXml}`;
 };
 
 // Create empty form
