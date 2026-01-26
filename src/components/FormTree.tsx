@@ -433,7 +433,11 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
 
         {/* Label */}
         <div className="flex-1 min-w-0">
-          <span className={`block truncate text-sm ${isSelected ? 'text-slate-900 font-medium' : 'text-slate-700'}`}>
+          <span className={`block truncate text-sm ${
+            node.nodeType === 'question' && (node as FormQuestion).required
+              ? 'text-red-600 font-medium'
+              : isSelected ? 'text-slate-900 font-medium' : 'text-slate-700'
+          }`}>
             {getNodeLabel(node)}
           </span>
           {getReferenceLabel(node) && (
@@ -448,11 +452,6 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
           <span className={`badge ${getBadgeClass(node.nodeType)}`}>
             {badge}
           </span>
-        )}
-
-        {/* Required indicator */}
-        {node.nodeType === 'question' && (node as FormQuestion).required && (
-          <span className="text-red-500 text-xs font-bold">*</span>
         )}
 
         {/* Actions (visible on hover) */}
