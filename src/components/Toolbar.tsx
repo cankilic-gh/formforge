@@ -24,7 +24,7 @@ import {
   Code,
   Check,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 
 interface ToolbarProps {
   onGenerateClick?: () => void;
@@ -55,6 +55,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   const [copied, setCopied] = useState(false);
 
   const hasUnsavedChanges = form && historyIndex !== savedHistoryIndex;
+
+  // Warn before closing tab/browser with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const handleShowXml = () => {
     if (!form) return;
@@ -291,7 +305,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
           <ToolbarButton icon={FilePlus} label="New" onClick={handleNew} />
           <ToolbarButton icon={FileUp} label="Open" onClick={handleOpen} />
           <ToolbarButton icon={RefreshCw} label="Reload" onClick={handleReload} disabled={!form} />
-          <ToolbarButton icon={Save} label="Save" onClick={handleSave} disabled={!form} />
+          <ToolbarButton icon={Save} label="Save" onClick={handleSave} disabled={!form} warning={hasUnsavedChanges} />
           <ToolbarButton icon={FileDown} label="Save As" onClick={handleSaveAs} disabled={!form} />
           <ToolbarButton icon={X} label="Close" onClick={handleClose} disabled={!form} />
         </ToolbarGroup>
@@ -412,6 +426,7 @@ interface ToolbarButtonProps {
   disabled?: boolean;
   active?: boolean;
   danger?: boolean;
+  warning?: boolean;
 }
 
 const ToolbarButton: React.FC<ToolbarButtonProps> = ({
@@ -421,6 +436,7 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({
   disabled = false,
   active = false,
   danger = false,
+  warning = false,
 }) => (
   <button
     onClick={onClick}
@@ -430,11 +446,13 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({
       flex flex-col items-center justify-center px-2 py-1 rounded-lg transition-colors min-w-[50px]
       ${disabled
         ? 'opacity-30 cursor-not-allowed'
-        : danger
-          ? 'hover:bg-red-50 text-slate-500 hover:text-red-600'
-          : active
-            ? 'bg-cyan-50 text-cyan-600'
-            : 'hover:bg-slate-100 text-slate-500 hover:text-slate-700'
+        : warning
+          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+          : danger
+            ? 'hover:bg-red-50 text-slate-500 hover:text-red-600'
+            : active
+              ? 'bg-cyan-50 text-cyan-600'
+              : 'hover:bg-slate-100 text-slate-500 hover:text-slate-700'
       }
     `}
   >
