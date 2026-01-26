@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
 import { FormNode, FormQuestion, FormEntity, FormConditionSet, FormSection, FormSubSection, PROFILE_REFERENCE_FIELDS } from '@/types/form';
@@ -26,7 +26,16 @@ import {
   GripVertical,
   FileInput,
   FileCheck,
+  Clipboard,
 } from 'lucide-react';
+
+// Context menu state
+interface ContextMenuState {
+  isOpen: boolean;
+  x: number;
+  y: number;
+  nodeId: string | null;
+}
 
 // Drag state
 interface DragState {
@@ -194,9 +203,10 @@ interface TreeNodeProps {
   setDragState: (state: DragState) => void;
   parentId: string | null;
   index: number;
+  onContextMenu: (e: React.MouseEvent, nodeId: string) => void;
 }
 
-const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragState, parentId, index }) => {
+const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragState, parentId, index, onContextMenu }) => {
   const {
     selectedNodeId,
     selectNode,
@@ -391,6 +401,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
         } ${isDragging ? 'opacity-50' : ''} ${getDropIndicatorStyle()}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
+        onContextMenu={(e) => onContextMenu(e, node.id)}
         draggable={canDrag}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
@@ -488,6 +499,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
                 setDragState={setDragState}
                 parentId={node.id}
                 index={idx}
+                onContextMenu={onContextMenu}
               />
             ))}
         </div>
@@ -497,17 +509,74 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
 };
 
 export const FormTree: React.FC = () => {
-  const { form } = useFormStore();
+  const { form, copyNode, pasteNode, canPaste, selectNode } = useFormStore();
   const [dragState, setDragState] = useState<DragState>({
     draggedNodeId: null,
     dropTargetId: null,
     dropPosition: null,
   });
 
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    nodeId: null,
+  });
+
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleClick = () => {
+      if (contextMenu.isOpen) {
+        setContextMenu({ ...contextMenu, isOpen: false });
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && contextMenu.isOpen) {
+        setContextMenu({ ...contextMenu, isOpen: false });
+      }
+    };
+
+    document.addEventListener('click', handleClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', handleClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [contextMenu]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, nodeId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectNode(nodeId);
+    setContextMenu({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      nodeId,
+    });
+  }, [selectNode]);
+
+  const handleCopy = useCallback(() => {
+    if (contextMenu.nodeId) {
+      copyNode(contextMenu.nodeId);
+    }
+    setContextMenu({ ...contextMenu, isOpen: false });
+  }, [contextMenu, copyNode]);
+
+  const handlePaste = useCallback(() => {
+    if (contextMenu.nodeId) {
+      pasteNode(contextMenu.nodeId);
+    }
+    setContextMenu({ ...contextMenu, isOpen: false });
+  }, [contextMenu, pasteNode]);
+
   if (!form) return null;
 
+  const showPaste = contextMenu.nodeId ? canPaste(contextMenu.nodeId) : false;
+
   return (
-    <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-200">
+    <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-200 relative">
       <TreeNode
         node={form}
         depth={0}
@@ -515,7 +584,34 @@ export const FormTree: React.FC = () => {
         setDragState={setDragState}
         parentId={null}
         index={0}
+        onContextMenu={handleContextMenu}
       />
+
+      {/* Context Menu */}
+      {contextMenu.isOpen && (
+        <div
+          className="fixed bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50 min-w-[140px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleCopy}
+            className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 flex items-center gap-2"
+          >
+            <Copy className="w-4 h-4 text-slate-500" />
+            Copy
+          </button>
+          {showPaste && (
+            <button
+              onClick={handlePaste}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 flex items-center gap-2"
+            >
+              <Clipboard className="w-4 h-4 text-slate-500" />
+              Paste
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

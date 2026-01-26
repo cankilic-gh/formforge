@@ -64,6 +64,9 @@ interface FormState {
   deleteNode: (nodeId: string) => void;
   moveNode: (nodeId: string, targetParentId: string, index: number) => void;
   duplicateNode: (nodeId: string) => void;
+  copyNode: (nodeId: string) => void;
+  pasteNode: (targetParentId: string) => void;
+  canPaste: (targetParentId: string) => boolean;
 
   // UI actions
   togglePreview: () => void;
@@ -806,6 +809,105 @@ export const useFormStore = create<FormState>()(
 
             set({ form: updatedForm, selectedNodeId: cloned.id });
             get().saveToHistory();
+          }
+        },
+
+        copyNode: (nodeId) => {
+          const form = get().form;
+          if (!form) return;
+
+          const node = findNodeRecursive(form, nodeId);
+          if (!node) return;
+
+          // Deep clone the node and store in localStorage for cross-tab access
+          const cloned = deepClone(node);
+          const clipboardData = {
+            node: cloned,
+            timestamp: Date.now(),
+          };
+
+          try {
+            localStorage.setItem('formforge-clipboard', JSON.stringify(clipboardData));
+          } catch (e) {
+            console.error('Failed to copy to clipboard:', e);
+          }
+        },
+
+        pasteNode: (targetParentId) => {
+          const form = get().form;
+          if (!form) return;
+
+          // Read from localStorage
+          let clipboardData: { node: FormNode; timestamp: number } | null = null;
+          try {
+            const stored = localStorage.getItem('formforge-clipboard');
+            if (stored) {
+              clipboardData = JSON.parse(stored);
+            }
+          } catch (e) {
+            console.error('Failed to read clipboard:', e);
+            return;
+          }
+
+          if (!clipboardData || !clipboardData.node) return;
+
+          // Clone the node
+          const cloned = deepClone(clipboardData.node);
+
+          // Regenerate all IDs using current form's suffix
+          const regenerateIds = (n: FormNode): void => {
+            n.id = generateId();
+            if ('children' in n && Array.isArray(n.children)) {
+              n.children.forEach((c) => regenerateIds(c as FormNode));
+            }
+          };
+          regenerateIds(cloned);
+
+          // Find target parent and add the node
+          const updatedForm = deepClone(get().form!);
+          const parent = findNodeRecursive(updatedForm, targetParentId);
+
+          if (parent && 'children' in parent) {
+            (parent.children as FormNode[]).push(cloned);
+            const expanded = new Set(get().expandedNodes);
+            expanded.add(targetParentId);
+            set({ form: updatedForm, selectedNodeId: cloned.id, expandedNodes: expanded });
+            get().saveToHistory();
+          }
+        },
+
+        canPaste: (targetParentId) => {
+          // Check if there's something in clipboard
+          try {
+            const stored = localStorage.getItem('formforge-clipboard');
+            if (!stored) return false;
+
+            const clipboardData = JSON.parse(stored);
+            if (!clipboardData || !clipboardData.node) return false;
+
+            // Check if target can accept this node type
+            const form = get().form;
+            if (!form) return false;
+
+            const parent = findNodeRecursive(form, targetParentId);
+            if (!parent) return false;
+
+            const nodeType = clipboardData.node.nodeType;
+            const parentType = parent.nodeType;
+
+            // Rules for what can be pasted where
+            const rules: Record<string, string[]> = {
+              questionnaire: ['section'],
+              section: ['subsection'],
+              subsection: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+              entity: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+              conditionset: ['question', 'conditional', 'description', 'warning', 'note', 'required-doc'],
+              conditional: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+            };
+
+            return rules[parentType]?.includes(nodeType) || false;
+          } catch {
+            return false;
           }
         },
 
