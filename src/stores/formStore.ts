@@ -1053,10 +1053,22 @@ export const useFormStore = create<FormState>()(
     },
     {
       name: 'formforge-storage',
-      partialize: (state) => ({
+      storage: {
+        getItem: (name) => {
+          const str = sessionStorage.getItem(name);
+          return str ? JSON.parse(str) : null;
+        },
+        setItem: (name, value) => {
+          sessionStorage.setItem(name, JSON.stringify(value));
+        },
+        removeItem: (name) => {
+          sessionStorage.removeItem(name);
+        },
+      },
+      partialize: (state: FormState) => ({
         form: state.form,
         expandedNodes: Array.from(state.expandedNodes),
-      }),
+      } as unknown as FormState),
       merge: (persisted, current) => ({
         ...current,
         ...(persisted as Partial<FormState>),
