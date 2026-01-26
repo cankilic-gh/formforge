@@ -305,7 +305,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
           <ToolbarButton icon={FilePlus} label="New" onClick={handleNew} />
           <ToolbarButton icon={FileUp} label="Open" onClick={handleOpen} />
           <ToolbarButton icon={RefreshCw} label="Reload" onClick={handleReload} disabled={!form} />
-          <ToolbarButton icon={Save} label="Save" onClick={handleSave} disabled={!form} warning={hasUnsavedChanges} />
+          <ToolbarButton icon={Save} label="Save" onClick={handleSave} disabled={!form} warning={!!hasUnsavedChanges} />
           <ToolbarButton icon={FileDown} label="Save As" onClick={handleSaveAs} disabled={!form} />
           <ToolbarButton icon={X} label="Close" onClick={handleClose} disabled={!form} />
         </ToolbarGroup>
