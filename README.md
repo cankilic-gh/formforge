@@ -153,6 +153,12 @@ formforge/
 └── package.json
 ```
 
+## License
+
+MIT License - feel free to use and modify.
+
+---
+
 ## Part of TheGridBase
 
 FormForge is part of the [TheGridBase](https://github.com/cankilic-gh/thegridbase) ecosystem - a multi-agent development platform for exceptional web applications.
