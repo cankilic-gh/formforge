@@ -881,7 +881,17 @@ export const useFormStore = create<FormState>()(
           const cloned = deepClone(clipboardData.node);
 
           // Regenerate all IDs using current form's suffix
+          // Skip conditionlogic and condition nodes to preserve their ID references
           const regenerateIds = (n: FormNode): void => {
+            // Don't change IDs for conditionlogic and condition elements
+            if (n.nodeType === 'conditionlogic' || n.nodeType === 'condition') {
+              // Still process children of conditionlogic, but not the conditions array
+              if ('children' in n && Array.isArray(n.children)) {
+                n.children.forEach((c) => regenerateIds(c as FormNode));
+              }
+              return;
+            }
+
             n.id = generateId();
             if ('children' in n && Array.isArray(n.children)) {
               n.children.forEach((c) => regenerateIds(c as FormNode));
