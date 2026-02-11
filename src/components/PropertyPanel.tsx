@@ -6,9 +6,11 @@ import {
   FormQuestion,
   FormEntity,
   FormConditionSet,
+  FormConditionLogic,
   FormConditional,
   FormSection,
   FormSubSection,
+  FormSubform,
   FormOption,
   FormDescription,
   FormIncludeForm,
@@ -43,11 +45,13 @@ export const PropertyPanel: React.FC = () => {
 
       {/* Properties based on node type */}
       {node.nodeType === 'questionnaire' && <QuestionnaireProps node={node as FormNode & { title: string }} />}
+      {node.nodeType === 'subform' && <SubformProps node={node as FormSubform} />}
       {node.nodeType === 'section' && <SectionProps node={node as FormSection} />}
       {node.nodeType === 'subsection' && <SubSectionProps node={node as FormSubSection} />}
       {node.nodeType === 'question' && <QuestionProps node={node as FormQuestion} />}
       {node.nodeType === 'entity' && <EntityProps node={node as FormEntity} />}
       {node.nodeType === 'conditionset' && <ConditionSetProps node={node as FormConditionSet} />}
+      {node.nodeType === 'conditionlogic' && <ConditionLogicProps node={node as FormConditionLogic} />}
       {node.nodeType === 'conditional' && <ConditionalProps node={node as FormConditional} />}
       {node.nodeType === 'includeform' && <IncludeFormProps node={node as FormIncludeForm} />}
       {node.nodeType === 'required-doc' && <RequiredDocProps node={node as FormRequiredDocument} />}
@@ -57,6 +61,32 @@ export const PropertyPanel: React.FC = () => {
 
 // Questionnaire Properties
 const QuestionnaireProps: React.FC<{ node: FormNode & { title: string; suffix?: string } }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Title">
+        <input
+          type="text"
+          value={node.title}
+          onChange={(e) => updateNode(node.id, { title: e.target.value })}
+          className="w-full"
+        />
+      </Field>
+      <Field label="Suffix">
+        <input
+          type="text"
+          value={node.suffix || ''}
+          onChange={(e) => updateNode(node.id, { suffix: e.target.value })}
+          className="w-full"
+        />
+      </Field>
+    </div>
+  );
+};
+
+// Subform Properties
+const SubformProps: React.FC<{ node: FormSubform }> = ({ node }) => {
   const { updateNode } = useFormStore();
 
   return (
@@ -536,6 +566,49 @@ const ConditionSetProps: React.FC<{ node: FormConditionSet }> = ({ node }) => {
           <strong>Tip:</strong> Add questions with trigger values inside this condition set, then add a conditional branch to show content when conditions are met.
         </p>
       </div>
+    </div>
+  );
+};
+
+// ConditionLogic Properties
+const ConditionLogicProps: React.FC<{ node: FormConditionLogic }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Operator" hint="How conditions are evaluated">
+        <select
+          value={node.operator}
+          onChange={(e) => updateNode(node.id, { operator: e.target.value as FormConditionLogic['operator'] })}
+          className="w-full"
+        >
+          {CONDITION_OPERATORS.map((op) => (
+            <option key={op.value} value={op.value}>
+              {op.label} - {op.description}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+        <p className="text-xs text-amber-700">
+          <strong>Condition Logic:</strong> This contains conditions that determine when the nested content is shown based on question values.
+        </p>
+      </div>
+
+      {node.conditions && node.conditions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-slate-600">Conditions:</p>
+          {node.conditions.map((cond, idx) => (
+            <div key={cond.id} className="p-2 bg-slate-50 rounded text-xs font-mono">
+              {idx > 0 && <span className="text-amber-600">{node.operator.toUpperCase()} </span>}
+              <span className="text-slate-700">Q({cond.questionId})</span>
+              <span className="text-slate-500"> = </span>
+              <span className="text-green-600">&quot;{cond.value}&quot;</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

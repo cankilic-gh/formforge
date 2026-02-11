@@ -2,7 +2,7 @@
 
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
-import { parseXML, buildXML, createEmptyForm } from '@/lib/xmlParser';
+import { parseAnyXML, buildAnyXML, createEmptyForm, createEmptySubform, detectXMLType } from '@/lib/xmlParser';
 import {
   FileUp,
   FileDown,
@@ -72,7 +72,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   const handleShowXml = () => {
     if (!form) return;
-    const xml = buildXML(form);
+    const xml = buildAnyXML(form);
     setXmlContent(xml);
     setIsXmlModalOpen(true);
     setCopied(false);
@@ -93,7 +93,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       }
     }
 
-    const title = await showPrompt('New Form', 'Enter form title:', 'Character and Fitness Questionnaire');
+    // Ask for form type
+    const formType = await showPrompt('Form Type', 'Enter "form" for questionnaire or "subform" for subform:', 'form');
+    if (!formType) return;
+
+    const isSubform = formType.toLowerCase() === 'subform';
+
+    const title = await showPrompt(
+      isSubform ? 'New Subform' : 'New Form',
+      `Enter ${isSubform ? 'subform' : 'form'} title:`,
+      isSubform ? 'New Subform' : 'Character and Fitness Questionnaire'
+    );
     if (!title) return;
 
     const suffix = await showPrompt('Form Suffix', 'Enter form suffix (5 digits):', '00001');
@@ -101,7 +111,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
     fileHandleRef.current = null;
     setSavedHistoryIndex(-1);
-    setForm(createEmptyForm(title, suffix));
+    setForm(isSubform ? createEmptySubform(title, suffix) : createEmptyForm(title, suffix));
   };
 
   const handleOpen = async () => {
@@ -123,7 +133,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         });
         const file = await handle.getFile();
         const xml = await file.text();
-        const parsed = parseXML(xml);
+
+        // Auto-detect XML type
+        const xmlType = detectXMLType(xml);
+        if (!xmlType) {
+          await showAlert('Error', 'Could not detect XML type. File must contain a <questionnaire> or <subform> element.');
+          return;
+        }
+
+        const parsed = parseAnyXML(xml);
         if (parsed) {
           fileHandleRef.current = handle;
           setForm(parsed);
@@ -148,7 +166,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     const reader = new FileReader();
     reader.onload = async (event) => {
       const xml = event.target?.result as string;
-      const parsed = parseXML(xml);
+
+      // Auto-detect XML type
+      const xmlType = detectXMLType(xml);
+      if (!xmlType) {
+        await showAlert('Error', 'Could not detect XML type. File must contain a <questionnaire> or <subform> element.');
+        return;
+      }
+
+      const parsed = parseAnyXML(xml);
       if (parsed) {
         fileHandleRef.current = null; // No handle for legacy file input
         setForm(parsed);
@@ -171,7 +197,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   const handleSave = async () => {
     if (!form) return;
-    const xml = buildXML(form);
+    const xml = buildAnyXML(form);
 
     // If we have an existing file handle, save directly to it
     if (fileHandleRef.current) {
@@ -193,7 +219,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   const handleSaveAs = async () => {
     if (!form) return;
-    const xml = buildXML(form);
+    const xml = buildAnyXML(form);
     const defaultName = `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
 
     // Use File System Access API if available
@@ -272,8 +298,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   const handleDelete = async () => {
     if (!selectedNodeId) return;
     const node = findNodeById(selectedNodeId);
-    if (node?.nodeType === 'questionnaire') {
-      await showAlert('Error', 'Cannot delete the root questionnaire');
+    if (node?.nodeType === 'questionnaire' || node?.nodeType === 'subform') {
+      await showAlert('Error', 'Cannot delete the root element');
       return;
     }
     const confirmed = await showConfirm('Delete Node', 'Delete selected node and all its children?');

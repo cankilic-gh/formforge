@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
-import { FormNode, FormQuestion, FormEntity, FormConditionSet, FormSection, FormSubSection, PROFILE_REFERENCE_FIELDS } from '@/types/form';
+import { FormNode, FormQuestion, FormEntity, FormConditionSet, FormConditionLogic, FormSection, FormSubSection, FormSubform, PROFILE_REFERENCE_FIELDS } from '@/types/form';
 import {
   ChevronRight,
   ChevronDown,
@@ -50,6 +50,8 @@ const getNodeIcon = (node: FormNode): React.ReactNode => {
   switch (node.nodeType) {
     case 'questionnaire':
       return <FileText className={`${iconClass} text-cyan-600`} />;
+    case 'subform':
+      return <FileText className={`${iconClass} text-cyan-500`} />;
     case 'section':
       return <FolderOpen className={`${iconClass} text-green-600`} />;
     case 'subsection':
@@ -83,6 +85,8 @@ const getNodeIcon = (node: FormNode): React.ReactNode => {
     }
     case 'conditionset':
       return <GitBranch className={`${iconClass} text-amber-600`} />;
+    case 'conditionlogic':
+      return <GitBranch className={`${iconClass} text-amber-700`} />;
     case 'conditional':
       return <GitBranch className={`${iconClass} text-amber-500`} />;
     case 'warning':
@@ -103,6 +107,8 @@ const getNodeLabel = (node: FormNode): string => {
   switch (node.nodeType) {
     case 'questionnaire':
       return (node as { title: string }).title;
+    case 'subform':
+      return (node as FormSubform).title;
     case 'section':
     case 'subsection':
       return (node as FormSection | FormSubSection).title;
@@ -118,6 +124,10 @@ const getNodeLabel = (node: FormNode): string => {
     case 'conditionset': {
       const cs = node as FormConditionSet;
       return `Condition (${cs.operator.toUpperCase()})`;
+    }
+    case 'conditionlogic': {
+      const cl = node as FormConditionLogic;
+      return `ConditionLogic (${cl.operator.toUpperCase()})`;
     }
     case 'conditional': {
       const cond = node as { condition: string };
@@ -187,11 +197,13 @@ const getBadgeClass = (nodeType: string): string => {
 const canAcceptChild = (parentType: string, childType: string): boolean => {
   const rules: Record<string, string[]> = {
     questionnaire: ['section'],
+    subform: ['question', 'entity', 'conditionset', 'conditionlogic', 'description', 'warning', 'note', 'includeform', 'required-doc'],
     section: ['subsection'],
-    subsection: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
-    entity: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+    subsection: ['question', 'entity', 'conditionset', 'conditionlogic', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+    entity: ['question', 'entity', 'conditionset', 'conditionlogic', 'description', 'warning', 'note', 'includeform', 'required-doc'],
     conditionset: ['question', 'conditional', 'description', 'warning', 'note', 'required-doc'],
-    conditional: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+    conditionlogic: ['question', 'entity', 'conditionset', 'conditionlogic', 'conditional', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+    conditional: ['question', 'entity', 'conditionset', 'conditionlogic', 'description', 'warning', 'note', 'includeform', 'required-doc'],
   };
   return rules[parentType]?.includes(childType) || false;
 };
@@ -263,7 +275,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
 
   // Drag handlers
   const handleDragStart = (e: React.DragEvent) => {
-    if (node.nodeType === 'questionnaire') {
+    if (node.nodeType === 'questionnaire' || node.nodeType === 'subform') {
       e.preventDefault();
       return;
     }
@@ -373,7 +385,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
   }
 
   const badge = getNodeBadge(node);
-  const canDrag = node.nodeType !== 'questionnaire';
+  const canDrag = node.nodeType !== 'questionnaire' && node.nodeType !== 'subform';
 
   // Drop indicator styles
   const getDropIndicatorStyle = () => {
@@ -472,7 +484,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
           >
             <Copy className="w-3 h-3 text-slate-500" />
           </button>
-          {node.nodeType !== 'questionnaire' && (
+          {node.nodeType !== 'questionnaire' && node.nodeType !== 'subform' && (
             <button
               onClick={handleDelete}
               className="p-1 hover:bg-red-100 rounded"

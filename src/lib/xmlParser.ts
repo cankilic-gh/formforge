@@ -1,11 +1,14 @@
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import {
   FormQuestionnaire,
+  FormSubform,
   FormSection,
   FormSubSection,
   FormQuestion,
   FormEntity,
   FormConditionSet,
+  FormConditionLogic,
+  FormCondition,
   FormConditional,
   FormDescription,
   FormWarning,
@@ -15,6 +18,7 @@ import {
   FormIncludeForm,
   FormRequiredDocument,
   FormNode,
+  FormRoot,
   QuestionType,
   ConditionOperator,
 } from '@/types/form';
@@ -234,6 +238,36 @@ const parseConditionSet = (node: Record<string, unknown>): FormConditionSet => {
   };
 };
 
+// Parse Condition (used in conditionlogic)
+const parseCondition = (node: Record<string, unknown>): FormCondition => ({
+  id: String(node['@_id'] || generateId()),
+  nodeType: 'condition',
+  equals: String(node['@_equals'] || 'true'),
+  value: String(node['@_value'] || ''),
+  questionId: String(node['@_questionid'] || ''),
+  _originalAttrs: extractOriginalAttrs(node),
+});
+
+// Parse ConditionLogic
+const parseConditionLogic = (node: Record<string, unknown>): FormConditionLogic => {
+  // Parse condition elements
+  const conditions = ensureArray(node['condition'] as Record<string, unknown>[]).map(parseCondition);
+
+  // Parse other children (entities, questions, etc.) - skip 'condition' as they're handled separately
+  const nodeWithoutConditions = { ...node };
+  delete nodeWithoutConditions['condition'];
+  const children = parseChildren(nodeWithoutConditions);
+
+  return {
+    id: String(node['@_id'] || generateId()),
+    nodeType: 'conditionlogic',
+    operator: (node['@_operator'] || 'or') as ConditionOperator,
+    conditions,
+    children,
+    _originalAttrs: extractOriginalAttrs(node),
+  };
+};
+
 // Parse Entity
 const parseEntity = (node: Record<string, unknown>): FormEntity => {
   return {
@@ -272,6 +306,16 @@ const parseChildren = (node: Record<string, unknown>): FormNode[] => {
   // ConditionSets
   ensureArray(node['conditionset'] as Record<string, unknown>[]).forEach((cs) => {
     children.push(parseConditionSet(cs));
+  });
+
+  // ConditionLogic (used in subforms)
+  ensureArray(node['conditionlogic'] as Record<string, unknown>[]).forEach((cl) => {
+    children.push(parseConditionLogic(cl));
+  });
+
+  // Conditionals (can also appear at this level)
+  ensureArray(node['conditional'] as Record<string, unknown>[]).forEach((c) => {
+    children.push(parseConditional(c));
   });
 
   // Descriptions
@@ -525,6 +569,34 @@ export const buildXML = (form: FormQuestionnaire): string => {
         addChildrenToResult(result, cs.children);
         return result;
       }
+      case 'conditionlogic': {
+        const cl = node as FormConditionLogic;
+        const result = buildWithOriginalAttrs(cl, {
+          '@_id': cl.id,
+          '@_operator': cl.operator,
+        });
+        // Add condition elements
+        if (cl.conditions && cl.conditions.length > 0) {
+          result['condition'] = cl.conditions.map((c) => buildWithOriginalAttrs(c, {
+            '@_id': c.id,
+            '@_equals': c.equals,
+            '@_value': c.value,
+            '@_questionid': c.questionId,
+          }));
+        }
+        // Add other children
+        addChildrenToResult(result, cl.children);
+        return result;
+      }
+      case 'condition': {
+        const cond = node as FormCondition;
+        return buildWithOriginalAttrs(cond, {
+          '@_id': cond.id,
+          '@_equals': cond.equals,
+          '@_value': cond.value,
+          '@_questionid': cond.questionId,
+        });
+      }
       case 'conditional': {
         const cond = node as FormConditional;
         const result = buildWithOriginalAttrs(cond, {
@@ -625,4 +697,341 @@ export const createEmptyForm = (title: string = 'New Form', customSuffix?: strin
     nextId: 2, // Next item will be 2 + suffix = 2xxxxx
     children: [],
   };
+};
+
+// Regenerate all IDs in subform tree with sequential IDs
+const regenerateAllIdsSubform = (form: FormSubform): void => {
+  const suffix = form.suffix || generateSuffix();
+  let nextId = 2; // Start from 2, subform gets 1
+
+  // Update subform ID
+  form.id = `1${suffix}`;
+  form.suffix = suffix;
+
+  // Recursive function to regenerate IDs
+  const regenerate = (node: FormNode): void => {
+    if (node.nodeType !== 'subform') {
+      node.id = `${nextId}${suffix}`;
+      nextId++;
+    }
+
+    if ('children' in node && Array.isArray(node.children)) {
+      node.children.forEach((child) => regenerate(child as FormNode));
+    }
+  };
+
+  // Regenerate for all children
+  form.children.forEach((child) => {
+    regenerate(child);
+  });
+
+  // Update nextId in form
+  form.nextId = nextId;
+};
+
+// Parse Subform XML
+export const parseSubformXML = (xmlString: string): FormSubform | null => {
+  try {
+    const parser = new XMLParser(parserOptions);
+    const result = parser.parse(xmlString);
+
+    const subform = result['subform'];
+    if (!subform) {
+      console.error('No subform element found');
+      return null;
+    }
+
+    const form: FormSubform = {
+      id: String(subform['@_id'] || generateId()),
+      nodeType: 'subform',
+      title: String(subform['@_title'] || 'Untitled Subform'),
+      suffix: String(subform['@_suffix'] || ''),
+      nextId: parseInt(String(subform['@_nextid'] || '1'), 10) || 1,
+      children: parseChildren(subform),
+      _originalAttrs: extractOriginalAttrs(subform),
+    };
+
+    // Auto-regenerate all IDs to ensure uniqueness
+    regenerateAllIdsSubform(form);
+
+    return form;
+  } catch (error) {
+    console.error('Failed to parse Subform XML:', error);
+    return null;
+  }
+};
+
+// Build Subform XML
+export const buildSubformXML = (form: FormSubform): string => {
+  const builder = new XMLBuilder(builderOptions);
+
+  // Helper to build with original attributes preserved
+  const buildWithOriginalAttrs = (node: { _originalAttrs?: Record<string, string> }, overrides: Record<string, unknown>): Record<string, unknown> => {
+    const result: Record<string, unknown> = {};
+
+    // First copy original attributes (preserve unknown attributes)
+    if (node._originalAttrs) {
+      Object.entries(node._originalAttrs).forEach(([key, value]) => {
+        // Handle 'true' and 'false' string values with placeholders
+        if (value === 'true') {
+          result[`@_${key}`] = '__BOOL_TRUE__';
+        } else if (value === 'false') {
+          result[`@_${key}`] = '__BOOL_FALSE__';
+        } else {
+          result[`@_${key}`] = value;
+        }
+      });
+    }
+
+    // Then apply overrides (our known fields)
+    Object.entries(overrides).forEach(([key, value]) => {
+      if (value !== undefined) {
+        result[key] = value;
+      }
+    });
+
+    return result;
+  };
+
+  const buildDescription = (desc: FormDescription) => buildWithOriginalAttrs(desc, {
+    '@_id': desc.id,
+    '@_prefix': desc.prefix,
+    '#cdata': desc.text,
+  });
+
+  const buildWarning = (warning: FormWarning) => buildWithOriginalAttrs(warning, {
+    '@_id': warning.id,
+    '#cdata': warning.text,
+  });
+
+  const buildNote = (note: FormNote) => buildWithOriginalAttrs(note, {
+    '@_id': note.id,
+    '@_ischeckitem': String(note.isCheckItem),
+    '#cdata': note.text,
+  });
+
+  const buildOption = (option: FormOption) => buildWithOriginalAttrs(option, {
+    '@_id': option.id,
+    '@_value': option.value,
+    '#cdata': option.text,
+  });
+
+  const buildReference = (ref: FormReference) => buildWithOriginalAttrs(ref, {
+    '@_id': ref.id,
+    '@_table': ref.table,
+    '@_field': ref.field,
+  });
+
+  const buildQuestion = (question: FormQuestion) => {
+    const overrides: Record<string, unknown> = {
+      '@_id': question.id,
+      '@_type': question.type,
+      '@_format': question.format,
+      '@_required': question.required === true ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
+      '@_triggervalue': question.triggerValue || '',
+      '@_comment': question.comment || '',
+    };
+
+    if (question.maxlength) overrides['@_maxlength'] = String(question.maxlength);
+    if (question.option) overrides['@_option'] = question.option;
+    if (question.refname) overrides['@_refname'] = question.refname;
+    if (question.appType) overrides['@_app_type'] = question.appType;
+    if (question.appTypeTrigger) overrides['@_app_type_trigger'] = question.appTypeTrigger;
+    if (question.isAmended) overrides['@_isamended'] = '__BOOL_TRUE__';
+    if (question.validatorClass) overrides['@_validatorclass'] = question.validatorClass;
+    if (question.validationMessage) overrides['@_validationmessage'] = question.validationMessage;
+    if (question.ncbeName) overrides['@_ncbe_name'] = question.ncbeName;
+    if (question.ncbeCurrently) overrides['@_ncbe_currently'] = '__BOOL_TRUE__';
+    if (question.ilgName) overrides['@_ilg_name'] = question.ilgName;
+
+    const result = buildWithOriginalAttrs(question, overrides);
+
+    const descriptions = question.children.filter((c) => c.nodeType === 'description');
+    const options = question.children.filter((c) => c.nodeType === 'option');
+    const references = question.children.filter((c) => c.nodeType === 'reference');
+
+    if (descriptions.length) result['description'] = descriptions.map(buildDescription);
+    if (options.length) result['option'] = options.map(buildOption);
+    if (references.length) result['reference'] = references.map(buildReference);
+
+    return result;
+  };
+
+  const buildNode = (node: FormNode): Record<string, unknown> | null => {
+    switch (node.nodeType) {
+      case 'description':
+        return buildDescription(node as FormDescription);
+      case 'warning':
+        return buildWarning(node as FormWarning);
+      case 'note':
+        return buildNote(node as FormNote);
+      case 'question':
+        return buildQuestion(node as FormQuestion);
+      case 'entity': {
+        const entity = node as FormEntity;
+        const overrides: Record<string, unknown> = {
+          '@_id': entity.id,
+          '@_title': entity.title,
+          '@_type': entity.type,
+          '@_min': String(entity.min || ''),
+          '@_max': String(entity.max || ''),
+        };
+        if (entity.groupType) overrides['@_grouptype'] = entity.groupType;
+        if (entity.ncbeName) overrides['@_ncbe_name'] = entity.ncbeName;
+        if (entity.ncbeValue) overrides['@_ncbe_value'] = entity.ncbeValue;
+        if (entity.ilgName) overrides['@_ilg_name'] = entity.ilgName;
+        if (entity.ilgValue) overrides['@_ilg_value'] = entity.ilgValue;
+
+        const result = buildWithOriginalAttrs(entity, overrides);
+        addChildrenToResult(result, entity.children);
+        return result;
+      }
+      case 'conditionset': {
+        const cs = node as FormConditionSet;
+        const result = buildWithOriginalAttrs(cs, {
+          '@_id': cs.id,
+          '@_operator': cs.operator,
+        });
+        addChildrenToResult(result, cs.children);
+        return result;
+      }
+      case 'conditionlogic': {
+        const cl = node as FormConditionLogic;
+        const result = buildWithOriginalAttrs(cl, {
+          '@_id': cl.id,
+          '@_operator': cl.operator,
+        });
+        // Add condition elements
+        if (cl.conditions && cl.conditions.length > 0) {
+          result['condition'] = cl.conditions.map((c) => buildWithOriginalAttrs(c, {
+            '@_id': c.id,
+            '@_equals': c.equals,
+            '@_value': c.value,
+            '@_questionid': c.questionId,
+          }));
+        }
+        // Add other children
+        addChildrenToResult(result, cl.children);
+        return result;
+      }
+      case 'condition': {
+        const cond = node as FormCondition;
+        return buildWithOriginalAttrs(cond, {
+          '@_id': cond.id,
+          '@_equals': cond.equals,
+          '@_value': cond.value,
+          '@_questionid': cond.questionId,
+        });
+      }
+      case 'conditional': {
+        const cond = node as FormConditional;
+        const result = buildWithOriginalAttrs(cond, {
+          '@_id': cond.id,
+        });
+        addChildrenToResult(result, cond.children);
+        return result;
+      }
+      case 'includeform': {
+        const inc = node as FormIncludeForm;
+        return buildWithOriginalAttrs(inc, {
+          '@_id': inc.id,
+          '@_formname': inc.formName,
+          '@_title': inc.title,
+          '@_type': inc.type,
+          '@_multipleinclude': inc.multipleInclude ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
+          '@_required': inc.required ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
+        });
+      }
+      case 'required-doc': {
+        const doc = node as FormRequiredDocument;
+        return buildWithOriginalAttrs(doc, {
+          '@_id': doc.id,
+          '@_title': doc.title,
+          '@_preventsubmit': doc.preventSubmit ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
+        });
+      }
+      default:
+        return null;
+    }
+  };
+
+  const addChildrenToResult = (result: Record<string, unknown>, children: FormNode[]) => {
+    const grouped: Record<string, unknown[]> = {};
+
+    children.forEach((child) => {
+      const built = buildNode(child);
+      if (built) {
+        const key = child.nodeType === 'required-doc' ? 'required-doc' : child.nodeType;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(built);
+      }
+    });
+
+    Object.entries(grouped).forEach(([key, values]) => {
+      result[key] = values;
+    });
+  };
+
+  // Build subform with original attributes preserved
+  const subformAttrs = buildWithOriginalAttrs(form, {
+    '@_id': form.id,
+    '@_nextid': String(form.nextId),
+    '@_suffix': form.suffix,
+    '@_order': '0',
+    '@_title': form.title,
+  });
+  addChildrenToResult(subformAttrs, form.children);
+
+  const xmlObj = {
+    subform: subformAttrs,
+  };
+
+  const xmlContent = builder.build(xmlObj);
+  // Replace placeholders with actual values (fast-xml-parser treats 'true'/'false' as boolean attributes)
+  const fixedXml = xmlContent
+    .replace(/__BOOL_TRUE__/g, 'true')
+    .replace(/__BOOL_FALSE__/g, 'false');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${fixedXml}`;
+};
+
+// Create empty subform
+export const createEmptySubform = (title: string = 'New Subform', customSuffix?: string): FormSubform => {
+  const suffix = customSuffix || generateSuffix();
+  return {
+    id: `1${suffix}`,
+    nodeType: 'subform',
+    title,
+    suffix,
+    nextId: 2,
+    children: [],
+  };
+};
+
+// Detect XML type (questionnaire or subform)
+export const detectXMLType = (xmlString: string): 'questionnaire' | 'subform' | null => {
+  try {
+    const parser = new XMLParser(parserOptions);
+    const result = parser.parse(xmlString);
+
+    if (result['questionnaire']) return 'questionnaire';
+    if (result['subform']) return 'subform';
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+// Parse any XML (auto-detect type)
+export const parseAnyXML = (xmlString: string): FormRoot | null => {
+  const type = detectXMLType(xmlString);
+  if (type === 'questionnaire') return parseXML(xmlString);
+  if (type === 'subform') return parseSubformXML(xmlString);
+  return null;
+};
+
+// Build any form XML (auto-detect type)
+export const buildAnyXML = (form: FormRoot): string => {
+  if (form.nodeType === 'questionnaire') return buildXML(form);
+  if (form.nodeType === 'subform') return buildSubformXML(form);
+  return '';
 };

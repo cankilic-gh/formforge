@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {
   FormQuestionnaire,
+  FormSubform,
   FormSection,
   FormSubSection,
   FormNode,
@@ -16,13 +17,14 @@ import {
   FormIncludeForm,
   FormRequiredDocument,
   FormReference,
+  FormRoot,
   QuestionType,
   ProfileReferenceField,
 } from '@/types/form';
 
 interface FormState {
-  // Current form
-  form: FormQuestionnaire | null;
+  // Current form (can be questionnaire or subform)
+  form: FormRoot | null;
 
   // Selection state
   selectedNodeId: string | null;
@@ -33,11 +35,11 @@ interface FormState {
   isSidebarCollapsed: boolean;
 
   // History for undo/redo
-  history: FormQuestionnaire[];
+  history: FormRoot[];
   historyIndex: number;
 
   // Actions
-  setForm: (form: FormQuestionnaire | null) => void;
+  setForm: (form: FormRoot | null) => void;
   selectNode: (nodeId: string | null) => void;
   toggleNodeExpanded: (nodeId: string) => void;
   expandAll: () => void;
@@ -930,11 +932,13 @@ export const useFormStore = create<FormState>()(
             // Rules for what can be pasted where
             const rules: Record<string, string[]> = {
               questionnaire: ['section'],
+              subform: ['question', 'entity', 'conditionset', 'conditionlogic', 'description', 'warning', 'note', 'includeform', 'required-doc'],
               section: ['subsection'],
-              subsection: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
-              entity: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+              subsection: ['question', 'entity', 'conditionset', 'conditionlogic', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+              entity: ['question', 'entity', 'conditionset', 'conditionlogic', 'description', 'warning', 'note', 'includeform', 'required-doc'],
               conditionset: ['question', 'conditional', 'description', 'warning', 'note', 'required-doc'],
-              conditional: ['question', 'entity', 'conditionset', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+              conditionlogic: ['question', 'entity', 'conditionset', 'conditionlogic', 'conditional', 'description', 'warning', 'note', 'includeform', 'required-doc'],
+              conditional: ['question', 'entity', 'conditionset', 'conditionlogic', 'description', 'warning', 'note', 'includeform', 'required-doc'],
             };
 
             return rules[parentType]?.includes(nodeType) || false;

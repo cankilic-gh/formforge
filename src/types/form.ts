@@ -343,6 +343,22 @@ export interface FormConditionSet extends BaseNode {
   children: (FormQuestion | FormConditional | FormDescription | FormWarning | FormNote)[];
 }
 
+// Condition (used in conditionlogic)
+export interface FormCondition extends BaseNode {
+  nodeType: 'condition';
+  equals: string;
+  value: string;
+  questionId: string;
+}
+
+// ConditionLogic (similar to conditionset but with condition elements)
+export interface FormConditionLogic extends BaseNode {
+  nodeType: 'conditionlogic';
+  operator: ConditionOperator;
+  conditions: FormCondition[];
+  children: FormNode[];
+}
+
 // Entity
 export interface FormEntity extends BaseNode {
   nodeType: 'entity';
@@ -403,14 +419,26 @@ export interface FormQuestionnaire extends BaseNode {
   children: FormSection[];
 }
 
+// Subform (Root for subforms - no sections, directly contains entities)
+export interface FormSubform extends BaseNode {
+  nodeType: 'subform';
+  title: string;
+  suffix: string;
+  nextId: number;
+  children: FormNode[]; // Contains entities directly, along with other nodes
+}
+
 // Union type for all form nodes
 export type FormNode =
   | FormQuestionnaire
+  | FormSubform
   | FormSection
   | FormSubSection
   | FormQuestion
   | FormEntity
   | FormConditionSet
+  | FormConditionLogic
+  | FormCondition
   | FormConditional
   | FormDescription
   | FormWarning
@@ -420,6 +448,9 @@ export type FormNode =
   | FormAnswer
   | FormIncludeForm
   | FormRequiredDocument;
+
+// Root node type (either questionnaire or subform)
+export type FormRoot = FormQuestionnaire | FormSubform;
 
 // Question type metadata for UI
 export interface QuestionTypeMeta {

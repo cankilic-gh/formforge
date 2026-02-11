@@ -7,6 +7,7 @@ import {
   FormQuestion,
   FormEntity,
   FormConditionSet,
+  FormConditionLogic,
   FormConditional,
   FormSection,
   FormSubSection,
@@ -14,6 +15,8 @@ import {
   FormOption,
   FormWarning,
   FormNote,
+  FormQuestionnaire,
+  FormSubform,
 } from '@/types/form';
 import { US_STATES, COUNTRIES, MONTHS, generateYears } from '@/lib/formData';
 
@@ -46,10 +49,14 @@ export const FormPreview: React.FC = () => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
   }, []);
 
-  // Derive subsection list grouped by section
+  // Check if the form is a questionnaire or subform
+  const isQuestionnaire = form?.nodeType === 'questionnaire';
+
+  // Derive subsection list grouped by section (only for questionnaires)
   const subsectionOptions = useMemo<SubsectionOption[]>(() => {
-    if (!form) return [];
-    return form.children.flatMap((section) =>
+    if (!form || !isQuestionnaire) return [];
+    const questionnaire = form as FormQuestionnaire;
+    return questionnaire.children.flatMap((section) =>
       section.children.map((subsection) => ({
         id: subsection.id,
         title: subsection.title,
@@ -57,7 +64,7 @@ export const FormPreview: React.FC = () => {
         sectionTitle: section.title,
       }))
     );
-  }, [form]);
+  }, [form, isQuestionnaire]);
 
   // Group subsections by section for optgroup
   const groupedSubsections = useMemo(() => {
@@ -71,18 +78,19 @@ export const FormPreview: React.FC = () => {
     return groups;
   }, [subsectionOptions]);
 
-  // Filter sections based on selection
-  const filteredSections = useMemo(() => {
-    if (!form) return [];
-    if (!selectedSubsectionId) return form.children;
+  // Filter sections based on selection (only for questionnaires)
+  const filteredSections = useMemo<FormSection[]>(() => {
+    if (!form || !isQuestionnaire) return [];
+    const questionnaire = form as FormQuestionnaire;
+    if (!selectedSubsectionId) return questionnaire.children;
 
-    return form.children
+    return questionnaire.children
       .map((section) => ({
         ...section,
         children: section.children.filter((sub) => sub.id === selectedSubsectionId),
       }))
       .filter((section) => section.children.length > 0);
-  }, [form, selectedSubsectionId]);
+  }, [form, selectedSubsectionId, isQuestionnaire]);
 
   if (!form) return null;
 
@@ -133,43 +141,45 @@ export const FormPreview: React.FC = () => {
           }
         `}</style>
 
-      {/* Subsection Selector */}
-      <div className="subsection-selector">
-        <div className="container">
-          <div className="d-flex align-items-center gap-3">
-            <label htmlFor="subsection-select" className="form-label mb-0 fw-medium text-secondary">
-              View:
-            </label>
-            <select
-              id="subsection-select"
-              className="form-select form-select-sm"
-              value={selectedSubsectionId}
-              onChange={(e) => setSelectedSubsectionId(e.target.value)}
-              style={{ width: 'auto', minWidth: '300px' }}
-            >
-              <option value="">Show All (Full Form)</option>
-              {Object.entries(groupedSubsections).map(([sectionTitle, subsections]) => (
-                <optgroup key={sectionTitle} label={sectionTitle}>
-                  {subsections.map((sub) => (
-                    <option key={sub.id} value={sub.id}>
-                      {sub.title}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-            {selectedSubsectionId && (
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-secondary"
-                onClick={() => setSelectedSubsectionId('')}
+      {/* Subsection Selector (only for questionnaires) */}
+      {isQuestionnaire && (
+        <div className="subsection-selector">
+          <div className="container">
+            <div className="d-flex align-items-center gap-3">
+              <label htmlFor="subsection-select" className="form-label mb-0 fw-medium text-secondary">
+                View:
+              </label>
+              <select
+                id="subsection-select"
+                className="form-select form-select-sm"
+                value={selectedSubsectionId}
+                onChange={(e) => setSelectedSubsectionId(e.target.value)}
+                style={{ width: 'auto', minWidth: '300px' }}
               >
-                Clear
-              </button>
-            )}
+                <option value="">Show All (Full Form)</option>
+                {Object.entries(groupedSubsections).map(([sectionTitle, subsections]) => (
+                  <optgroup key={sectionTitle} label={sectionTitle}>
+                    {subsections.map((sub) => (
+                      <option key={sub.id} value={sub.id}>
+                        {sub.title}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {selectedSubsectionId && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => setSelectedSubsectionId('')}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="container py-4">
         {/* Form Title */}
@@ -179,9 +189,13 @@ export const FormPreview: React.FC = () => {
         <div id="formBody">
           <form name="ilgform" method="post" className="preview-form">
             <div className="ebas-form-questions mb-5" id="questions">
-              {filteredSections.map((section) => (
-                <SectionPreview key={section.id} section={section} />
-              ))}
+              {isQuestionnaire ? (
+                filteredSections.map((section) => (
+                  <SectionPreview key={section.id} section={section} />
+                ))
+              ) : (
+                <SubformPreview subform={form as FormSubform} />
+              )}
             </div>
 
             {/* Submit Buttons */}
@@ -202,6 +216,15 @@ export const FormPreview: React.FC = () => {
     </PreviewContext.Provider>
   );
 };
+
+// Subform Preview (for subforms which don't have sections)
+const SubformPreview: React.FC<{ subform: FormSubform }> = ({ subform }) => (
+  <div className="mb-4">
+    {subform.children.map((child) => (
+      <NodePreview key={child.id} node={child} />
+    ))}
+  </div>
+);
 
 // Section Preview
 const SectionPreview: React.FC<{ section: FormSection }> = ({ section }) => (
@@ -232,6 +255,8 @@ const NodePreview: React.FC<{ node: FormNode }> = ({ node }) => {
       return <EntityPreview entity={node as FormEntity} />;
     case 'conditionset':
       return <ConditionSetPreview conditionSet={node as FormConditionSet} />;
+    case 'conditionlogic':
+      return <ConditionLogicPreview conditionLogic={node as FormConditionLogic} />;
     case 'conditional':
       return <ConditionalPreview conditional={node as FormConditional} />;
     case 'description':
@@ -676,6 +701,43 @@ const ConditionSetPreview: React.FC<{ conditionSet: FormConditionSet }> = ({ con
           <ConditionalPreview key={conditional.id} conditional={conditional} />
         );
       })}
+    </div>
+  );
+};
+
+// ConditionLogic Preview (similar to ConditionSet but uses condition elements)
+const ConditionLogicPreview: React.FC<{ conditionLogic: FormConditionLogic }> = ({ conditionLogic }) => {
+  const { answers } = usePreviewContext();
+
+  // Check if conditions are met based on the condition elements
+  const conditionsMet = () => {
+    if (!conditionLogic.conditions || conditionLogic.conditions.length === 0) return true;
+
+    const results = conditionLogic.conditions.map((cond) => {
+      const answer = answers[cond.questionId];
+      if (!answer) return false;
+
+      const equals = cond.equals === 'true';
+      const matches = answer.toLowerCase() === cond.value.toLowerCase();
+      return equals ? matches : !matches;
+    });
+
+    if (conditionLogic.operator === 'and') {
+      return results.every((r) => r);
+    }
+    // Default to 'or'
+    return results.some((r) => r);
+  };
+
+  // If conditions are not met, don't render children
+  const isVisible = conditionsMet();
+
+  return (
+    <div className="mb-3">
+      {/* Render children if conditions are met (or no conditions) */}
+      {isVisible && conditionLogic.children.map((child) => (
+        <NodePreview key={child.id} node={child} />
+      ))}
     </div>
   );
 };
