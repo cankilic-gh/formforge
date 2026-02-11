@@ -880,12 +880,43 @@ export const useFormStore = create<FormState>()(
           // Clone the node
           const cloned = deepClone(clipboardData.node);
 
+          // First, collect all questionid references from conditions
+          // These questions should keep their original IDs
+          const referencedQuestionIds = new Set<string>();
+          const collectQuestionIdRefs = (n: FormNode): void => {
+            // Check condition nodes for questionid
+            if (n.nodeType === 'condition') {
+              const condition = n as { questionId?: string; _originalAttrs?: Record<string, string> };
+              if (condition.questionId) {
+                referencedQuestionIds.add(condition.questionId);
+              }
+              if (condition._originalAttrs?.questionid) {
+                referencedQuestionIds.add(condition._originalAttrs.questionid);
+              }
+            }
+            // Check conditionlogic's conditions array
+            if (n.nodeType === 'conditionlogic') {
+              const cl = n as { conditions?: Array<{ questionId?: string; _originalAttrs?: Record<string, string> }> };
+              if (Array.isArray(cl.conditions)) {
+                cl.conditions.forEach((c) => {
+                  if (c.questionId) referencedQuestionIds.add(c.questionId);
+                  if (c._originalAttrs?.questionid) referencedQuestionIds.add(c._originalAttrs.questionid);
+                });
+              }
+            }
+            // Recurse into children
+            if ('children' in n && Array.isArray(n.children)) {
+              n.children.forEach((c) => collectQuestionIdRefs(c as FormNode));
+            }
+          };
+          collectQuestionIdRefs(cloned);
+
           // Regenerate all IDs using current form's suffix
-          // Skip conditionlogic and condition nodes to preserve their ID references
+          // Skip questions that are referenced by condition's questionid
           const regenerateIds = (n: FormNode): void => {
-            // Don't change IDs for conditionlogic and condition elements
-            if (n.nodeType === 'conditionlogic' || n.nodeType === 'condition') {
-              // Still process children of conditionlogic, but not the conditions array
+            // Don't change ID for questions that are referenced by questionid
+            if (n.nodeType === 'question' && referencedQuestionIds.has(n.id)) {
+              // Keep original ID, but still process children
               if ('children' in n && Array.isArray(n.children)) {
                 n.children.forEach((c) => regenerateIds(c as FormNode));
               }
