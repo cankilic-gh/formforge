@@ -595,7 +595,7 @@ const ConditionSetPreview: React.FC<{ conditionSet: FormConditionSet }> = ({ con
 
   // Check if a conditional should be visible based on operator and trigger values
   const shouldShowConditional = (conditional: FormConditional): boolean => {
-    const condition = conditional.condition;
+    const condition = conditional.condition || 'true'; // Default to 'true' if not set
 
     // No triggers answered yet
     if (triggerValues.every((t) => !t.value)) return false;

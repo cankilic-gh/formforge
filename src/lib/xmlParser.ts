@@ -61,12 +61,29 @@ const generateId = (): string => {
   return `node_${idCounter}`;
 };
 
+// Extract original attributes from parsed node
+const extractOriginalAttrs = (node: Record<string, unknown>): Record<string, string> => {
+  const attrs: Record<string, string> = {};
+  Object.keys(node).forEach(key => {
+    if (key.startsWith('@_')) {
+      const attrName = key.replace('@_', '');
+      const value = node[key];
+      // Only store non-empty string values
+      if (value !== undefined && value !== null && value !== '' && value !== true) {
+        attrs[attrName] = String(value);
+      }
+    }
+  });
+  return attrs;
+};
+
 // Parse Description
 const parseDescription = (node: Record<string, unknown>): FormDescription => ({
   id: String(node['@_id'] || generateId()),
   nodeType: 'description',
   prefix: String(node['@_prefix'] || ''),
   text: getText(node),
+  _originalAttrs: extractOriginalAttrs(node),
 });
 
 // Parse Warning
@@ -74,6 +91,7 @@ const parseWarning = (node: Record<string, unknown>): FormWarning => ({
   id: String(node['@_id'] || generateId()),
   nodeType: 'warning',
   text: getText(node),
+  _originalAttrs: extractOriginalAttrs(node),
 });
 
 // Parse Note
@@ -82,6 +100,7 @@ const parseNote = (node: Record<string, unknown>): FormNote => ({
   nodeType: 'note',
   text: getText(node),
   isCheckItem: node['@_ischeckitem'] === 'true',
+  _originalAttrs: extractOriginalAttrs(node),
 });
 
 // Parse Option
@@ -90,6 +109,7 @@ const parseOption = (node: Record<string, unknown>): FormOption => ({
   nodeType: 'option',
   value: String(node['@_value'] || ''),
   text: getText(node),
+  _originalAttrs: extractOriginalAttrs(node),
 });
 
 // Parse Reference
@@ -98,6 +118,7 @@ const parseReference = (node: Record<string, unknown>): FormReference => ({
   nodeType: 'reference',
   table: String(node['@_table'] || ''),
   field: (node['@_field'] || 'fullname') as FormReference['field'],
+  _originalAttrs: extractOriginalAttrs(node),
 });
 
 // Parse Question
@@ -139,6 +160,7 @@ const parseQuestion = (node: Record<string, unknown>): FormQuestion => {
     ncbeCurrently: node['@_ncbe_currently'] === 'true',
     ilgName: String(node['@_ilg_name'] || ''),
     children,
+    _originalAttrs: extractOriginalAttrs(node),
   };
 };
 
@@ -151,6 +173,7 @@ const parseIncludeForm = (node: Record<string, unknown>): FormIncludeForm => ({
   type: String(node['@_type'] || 'online'),
   multipleInclude: node['@_multipleinclude'] === 'true',
   required: node['@_required'] === 'true',
+  _originalAttrs: extractOriginalAttrs(node),
 });
 
 // Parse RequiredDocument
@@ -159,15 +182,19 @@ const parseRequiredDoc = (node: Record<string, unknown>): FormRequiredDocument =
   nodeType: 'required-doc',
   title: String(node['@_title'] || ''),
   preventSubmit: node['@_preventsubmit'] === 'true',
+  _originalAttrs: extractOriginalAttrs(node),
 });
 
 // Parse Conditional
-const parseConditional = (node: Record<string, unknown>): FormConditional => ({
-  id: String(node['@_id'] || generateId()),
-  nodeType: 'conditional',
-  condition: String(node['@_condition'] || 'true'),
-  children: parseChildren(node),
-});
+const parseConditional = (node: Record<string, unknown>): FormConditional => {
+  const result: FormConditional = {
+    id: String(node['@_id'] || generateId()),
+    nodeType: 'conditional',
+    children: parseChildren(node),
+    _originalAttrs: extractOriginalAttrs(node),
+  };
+  return result;
+};
 
 // Parse ConditionSet
 const parseConditionSet = (node: Record<string, unknown>): FormConditionSet => {
@@ -203,27 +230,30 @@ const parseConditionSet = (node: Record<string, unknown>): FormConditionSet => {
     nodeType: 'conditionset',
     operator: (node['@_operator'] || 'and') as ConditionOperator,
     children,
+    _originalAttrs: extractOriginalAttrs(node),
   };
 };
 
 // Parse Entity
-const parseEntity = (node: Record<string, unknown>): FormEntity => ({
-  id: String(node['@_id'] || generateId()),
-  nodeType: 'entity',
-  title: String(node['@_title'] || ''),
-  type: (node['@_type'] || 'single') as 'single' | 'addmore',
-  min: parseInt(String(node['@_min'] || '0'), 10) || 0,
-  max: parseInt(String(node['@_max'] || '0'), 10) || 0,
-  nextOrder: parseInt(String(node['@_nextorder'] || '1'), 10) || 1,
-  showInBarAdmin: node['@_showinbaradmin'] !== 'false',
-  isAmended: node['@_isamended'] === 'true',
-  groupType: String(node['@_grouptype'] || ''),
-  ncbeName: String(node['@_ncbe_name'] || ''),
-  ncbeValue: String(node['@_ncbe_value'] || ''),
-  ilgName: String(node['@_ilg_name'] || ''),
-  ilgValue: String(node['@_ilg_value'] || ''),
-  children: parseChildren(node),
-});
+const parseEntity = (node: Record<string, unknown>): FormEntity => {
+  return {
+    id: String(node['@_id'] || generateId()),
+    nodeType: 'entity',
+    title: String(node['@_title'] || ''),
+    type: (node['@_type'] || 'single') as 'single' | 'addmore',
+    min: parseInt(String(node['@_min'] || '0'), 10) || 0,
+    max: parseInt(String(node['@_max'] || '0'), 10) || 0,
+    nextOrder: parseInt(String(node['@_nextorder'] || '1'), 10) || 1,
+    isAmended: node['@_isamended'] === 'true',
+    groupType: String(node['@_grouptype'] || ''),
+    ncbeName: String(node['@_ncbe_name'] || ''),
+    ncbeValue: String(node['@_ncbe_value'] || ''),
+    ilgName: String(node['@_ilg_name'] || ''),
+    ilgValue: String(node['@_ilg_value'] || ''),
+    children: parseChildren(node),
+    _originalAttrs: extractOriginalAttrs(node),
+  };
+};
 
 // Parse children (generic)
 const parseChildren = (node: Record<string, unknown>): FormNode[] => {
@@ -273,22 +303,26 @@ const parseChildren = (node: Record<string, unknown>): FormNode[] => {
 };
 
 // Parse SubSection
-const parseSubSection = (node: Record<string, unknown>): FormSubSection => ({
-  id: String(node['@_id'] || generateId()),
-  nodeType: 'subsection',
-  title: String(node['@_title'] || ''),
-  showInBarAdmin: node['@_showinbaradmin'] !== 'false',
-  children: parseChildren(node),
-});
+const parseSubSection = (node: Record<string, unknown>): FormSubSection => {
+  return {
+    id: String(node['@_id'] || generateId()),
+    nodeType: 'subsection',
+    title: String(node['@_title'] || ''),
+    children: parseChildren(node),
+    _originalAttrs: extractOriginalAttrs(node),
+  };
+};
 
 // Parse Section
-const parseSection = (node: Record<string, unknown>): FormSection => ({
-  id: String(node['@_id'] || generateId()),
-  nodeType: 'section',
-  title: String(node['@_title'] || ''),
-  showInBarAdmin: node['@_showinbaradmin'] !== 'false',
-  children: ensureArray(node['subsection'] as Record<string, unknown>[]).map(parseSubSection),
-});
+const parseSection = (node: Record<string, unknown>): FormSection => {
+  return {
+    id: String(node['@_id'] || generateId()),
+    nodeType: 'section',
+    title: String(node['@_title'] || ''),
+    children: ensureArray(node['subsection'] as Record<string, unknown>[]).map(parseSubSection),
+    _originalAttrs: extractOriginalAttrs(node),
+  };
+};
 
 // Regenerate all IDs in the form tree with sequential IDs
 const regenerateAllIds = (form: FormQuestionnaire): void => {
@@ -344,6 +378,7 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
       suffix: String(questionnaire['@_suffix'] || ''),
       nextId: parseInt(String(questionnaire['@_nextid'] || '1'), 10) || 1,
       children: ensureArray(questionnaire['section'] as Record<string, unknown>[]).map(parseSection),
+      _originalAttrs: extractOriginalAttrs(questionnaire),
     };
 
     // Auto-regenerate all IDs to ensure uniqueness
@@ -360,56 +395,86 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
 export const buildXML = (form: FormQuestionnaire): string => {
   const builder = new XMLBuilder(builderOptions);
 
-  const buildDescription = (desc: FormDescription) => ({
+  // Helper to build with original attributes preserved
+  const buildWithOriginalAttrs = (node: { _originalAttrs?: Record<string, string> }, overrides: Record<string, unknown>): Record<string, unknown> => {
+    const result: Record<string, unknown> = {};
+
+    // First copy original attributes (preserve unknown attributes)
+    if (node._originalAttrs) {
+      Object.entries(node._originalAttrs).forEach(([key, value]) => {
+        // Handle 'true' and 'false' string values with placeholders
+        if (value === 'true') {
+          result[`@_${key}`] = '__BOOL_TRUE__';
+        } else if (value === 'false') {
+          result[`@_${key}`] = '__BOOL_FALSE__';
+        } else {
+          result[`@_${key}`] = value;
+        }
+      });
+    }
+
+    // Then apply overrides (our known fields)
+    Object.entries(overrides).forEach(([key, value]) => {
+      if (value !== undefined) {
+        result[key] = value;
+      }
+    });
+
+    return result;
+  };
+
+  const buildDescription = (desc: FormDescription) => buildWithOriginalAttrs(desc, {
     '@_id': desc.id,
     '@_prefix': desc.prefix,
     '#cdata': desc.text,
   });
 
-  const buildWarning = (warning: FormWarning) => ({
+  const buildWarning = (warning: FormWarning) => buildWithOriginalAttrs(warning, {
     '@_id': warning.id,
     '#cdata': warning.text,
   });
 
-  const buildNote = (note: FormNote) => ({
+  const buildNote = (note: FormNote) => buildWithOriginalAttrs(note, {
     '@_id': note.id,
     '@_ischeckitem': String(note.isCheckItem),
     '#cdata': note.text,
   });
 
-  const buildOption = (option: FormOption) => ({
+  const buildOption = (option: FormOption) => buildWithOriginalAttrs(option, {
     '@_id': option.id,
     '@_value': option.value,
     '#cdata': option.text,
   });
 
-  const buildReference = (ref: FormReference) => ({
+  const buildReference = (ref: FormReference) => buildWithOriginalAttrs(ref, {
     '@_id': ref.id,
     '@_table': ref.table,
     '@_field': ref.field,
   });
 
   const buildQuestion = (question: FormQuestion) => {
-    const result: Record<string, unknown> = {
+    const overrides: Record<string, unknown> = {
       '@_id': question.id,
       '@_type': question.type,
       '@_format': question.format,
-      '@_required': question.required === true ? '__BOOL_TRUE__' : 'false',
+      '@_required': question.required === true ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
       '@_triggervalue': question.triggerValue || '',
       '@_comment': question.comment || '',
     };
 
-    if (question.maxlength) result['@_maxlength'] = String(question.maxlength);
-    if (question.option) result['@_option'] = question.option;
-    if (question.refname) result['@_refname'] = question.refname;
-    if (question.appType) result['@_app_type'] = question.appType;
-    if (question.appTypeTrigger) result['@_app_type_trigger'] = question.appTypeTrigger;
-    if (question.isAmended) result['@_isamended'] = 'true';
-    if (question.validatorClass) result['@_validatorclass'] = question.validatorClass;
-    if (question.validationMessage) result['@_validationmessage'] = question.validationMessage;
-    if (question.ncbeName) result['@_ncbe_name'] = question.ncbeName;
-    if (question.ncbeCurrently) result['@_ncbe_currently'] = 'true';
-    if (question.ilgName) result['@_ilg_name'] = question.ilgName;
+    if (question.maxlength) overrides['@_maxlength'] = String(question.maxlength);
+    if (question.option) overrides['@_option'] = question.option;
+    if (question.refname) overrides['@_refname'] = question.refname;
+    if (question.appType) overrides['@_app_type'] = question.appType;
+    if (question.appTypeTrigger) overrides['@_app_type_trigger'] = question.appTypeTrigger;
+    if (question.isAmended) overrides['@_isamended'] = '__BOOL_TRUE__';
+    if (question.validatorClass) overrides['@_validatorclass'] = question.validatorClass;
+    if (question.validationMessage) overrides['@_validationmessage'] = question.validationMessage;
+    if (question.ncbeName) overrides['@_ncbe_name'] = question.ncbeName;
+    if (question.ncbeCurrently) overrides['@_ncbe_currently'] = '__BOOL_TRUE__';
+    if (question.ilgName) overrides['@_ilg_name'] = question.ilgName;
+
+    const result = buildWithOriginalAttrs(question, overrides);
 
     const descriptions = question.children.filter((c) => c.nodeType === 'description');
     const options = question.children.filter((c) => c.nodeType === 'option');
@@ -434,59 +499,58 @@ export const buildXML = (form: FormQuestionnaire): string => {
         return buildQuestion(node as FormQuestion);
       case 'entity': {
         const entity = node as FormEntity;
-        const result: Record<string, unknown> = {
+        const overrides: Record<string, unknown> = {
           '@_id': entity.id,
           '@_title': entity.title,
           '@_type': entity.type,
-          '@_min': String(entity.min),
-          '@_max': String(entity.max),
-          '@_showinbaradmin': String(entity.showInBarAdmin),
+          '@_min': String(entity.min || 0),
+          '@_max': String(entity.max || 0),
         };
-        if (entity.groupType) result['@_grouptype'] = entity.groupType;
-        if (entity.ncbeName) result['@_ncbe_name'] = entity.ncbeName;
-        if (entity.ncbeValue) result['@_ncbe_value'] = entity.ncbeValue;
-        if (entity.ilgName) result['@_ilg_name'] = entity.ilgName;
-        if (entity.ilgValue) result['@_ilg_value'] = entity.ilgValue;
+        if (entity.groupType) overrides['@_grouptype'] = entity.groupType;
+        if (entity.ncbeName) overrides['@_ncbe_name'] = entity.ncbeName;
+        if (entity.ncbeValue) overrides['@_ncbe_value'] = entity.ncbeValue;
+        if (entity.ilgName) overrides['@_ilg_name'] = entity.ilgName;
+        if (entity.ilgValue) overrides['@_ilg_value'] = entity.ilgValue;
 
+        const result = buildWithOriginalAttrs(entity, overrides);
         addChildrenToResult(result, entity.children);
         return result;
       }
       case 'conditionset': {
         const cs = node as FormConditionSet;
-        const result: Record<string, unknown> = {
+        const result = buildWithOriginalAttrs(cs, {
           '@_id': cs.id,
           '@_operator': cs.operator,
-        };
+        });
         addChildrenToResult(result, cs.children);
         return result;
       }
       case 'conditional': {
         const cond = node as FormConditional;
-        const result: Record<string, unknown> = {
+        const result = buildWithOriginalAttrs(cond, {
           '@_id': cond.id,
-          '@_condition': cond.condition,
-        };
+        });
         addChildrenToResult(result, cond.children);
         return result;
       }
       case 'includeform': {
         const inc = node as FormIncludeForm;
-        return {
+        return buildWithOriginalAttrs(inc, {
           '@_id': inc.id,
           '@_formname': inc.formName,
           '@_title': inc.title,
           '@_type': inc.type,
-          '@_multipleinclude': inc.multipleInclude ? '__BOOL_TRUE__' : 'false',
-          '@_required': inc.required ? '__BOOL_TRUE__' : 'false',
-        };
+          '@_multipleinclude': inc.multipleInclude ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
+          '@_required': inc.required ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
+        });
       }
       case 'required-doc': {
         const doc = node as FormRequiredDocument;
-        return {
+        return buildWithOriginalAttrs(doc, {
           '@_id': doc.id,
           '@_title': doc.title,
-          '@_preventsubmit': doc.preventSubmit ? '__BOOL_TRUE__' : 'false',
-        };
+          '@_preventsubmit': doc.preventSubmit ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
+        });
       }
       default:
         return null;
@@ -511,36 +575,41 @@ export const buildXML = (form: FormQuestionnaire): string => {
   };
 
   const buildSubSection = (subsection: FormSubSection) => {
-    const result: Record<string, unknown> = {
+    const result = buildWithOriginalAttrs(subsection, {
       '@_id': subsection.id,
       '@_title': subsection.title,
-      '@_showinbaradmin': String(subsection.showInBarAdmin),
-    };
+    });
     addChildrenToResult(result, subsection.children);
     return result;
   };
 
-  const buildSection = (section: FormSection) => ({
-    '@_id': section.id,
-    '@_title': section.title,
-    '@_showinbaradmin': String(section.showInBarAdmin),
-    subsection: section.children.map(buildSubSection),
+  const buildSection = (section: FormSection) => {
+    const result = buildWithOriginalAttrs(section, {
+      '@_id': section.id,
+      '@_title': section.title,
+    });
+    result['subsection'] = section.children.map(buildSubSection);
+    return result;
+  };
+
+  // Build questionnaire with original attributes preserved
+  const questionnaireAttrs = buildWithOriginalAttrs(form, {
+    '@_id': form.id,
+    '@_nextid': String(form.nextId),
+    '@_suffix': form.suffix,
+    '@_title': form.title,
   });
+  questionnaireAttrs['section'] = form.children.map(buildSection);
 
   const xmlObj = {
-    questionnaire: {
-      '@_id': form.id,
-      '@_nextid': String(form.nextId),
-      '@_suffix': form.suffix,
-      '@_order': '0',
-      '@_title': form.title,
-      section: form.children.map(buildSection),
-    },
+    questionnaire: questionnaireAttrs,
   };
 
   const xmlContent = builder.build(xmlObj);
-  // Replace placeholder with actual 'true' value (fast-xml-parser treats 'true' as boolean attribute)
-  const fixedXml = xmlContent.replace(/__BOOL_TRUE__/g, 'true');
+  // Replace placeholders with actual values (fast-xml-parser treats 'true'/'false' as boolean attributes)
+  const fixedXml = xmlContent
+    .replace(/__BOOL_TRUE__/g, 'true')
+    .replace(/__BOOL_FALSE__/g, 'false');
   return `<?xml version="1.0" encoding="UTF-8"?>\n${fixedXml}`;
 };
 

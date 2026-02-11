@@ -6,6 +6,7 @@ import {
   FormQuestion,
   FormEntity,
   FormConditionSet,
+  FormConditional,
   FormSection,
   FormSubSection,
   FormOption,
@@ -47,6 +48,7 @@ export const PropertyPanel: React.FC = () => {
       {node.nodeType === 'question' && <QuestionProps node={node as FormQuestion} />}
       {node.nodeType === 'entity' && <EntityProps node={node as FormEntity} />}
       {node.nodeType === 'conditionset' && <ConditionSetProps node={node as FormConditionSet} />}
+      {node.nodeType === 'conditional' && <ConditionalProps node={node as FormConditional} />}
       {node.nodeType === 'includeform' && <IncludeFormProps node={node as FormIncludeForm} />}
       {node.nodeType === 'required-doc' && <RequiredDocProps node={node as FormRequiredDocument} />}
     </div>
@@ -95,7 +97,7 @@ const SectionProps: React.FC<{ node: FormSection }> = ({ node }) => {
       </Field>
       <Field label="Show in Bar Admin">
         <ToggleSwitch
-          checked={node.showInBarAdmin}
+          checked={node.showInBarAdmin ?? false}
           onChange={(checked) => updateNode(node.id, { showInBarAdmin: checked })}
         />
       </Field>
@@ -119,7 +121,7 @@ const SubSectionProps: React.FC<{ node: FormSubSection }> = ({ node }) => {
       </Field>
       <Field label="Show in Bar Admin">
         <ToggleSwitch
-          checked={node.showInBarAdmin}
+          checked={node.showInBarAdmin ?? false}
           onChange={(checked) => updateNode(node.id, { showInBarAdmin: checked })}
         />
       </Field>
@@ -469,7 +471,7 @@ const EntityProps: React.FC<{ node: FormEntity }> = ({ node }) => {
       )}
       <Field label="Show in Bar Admin">
         <ToggleSwitch
-          checked={node.showInBarAdmin}
+          checked={node.showInBarAdmin ?? false}
           onChange={(checked) => updateNode(node.id, { showInBarAdmin: checked })}
         />
       </Field>
@@ -532,6 +534,78 @@ const ConditionSetProps: React.FC<{ node: FormConditionSet }> = ({ node }) => {
       <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
         <p className="text-xs text-amber-700">
           <strong>Tip:</strong> Add questions with trigger values inside this condition set, then add a conditional branch to show content when conditions are met.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// Conditional Properties
+const ConditionalProps: React.FC<{ node: FormConditional }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  // Check if it's a simple true/false or a switch condition (undefined means not set yet, treat as simple)
+  const isSimpleCondition = node.condition === undefined || node.condition === 'true' || node.condition === 'false';
+
+  return (
+    <div className="space-y-4">
+      <Field label="Condition Type">
+        <select
+          value={isSimpleCondition ? 'simple' : 'switch'}
+          onChange={(e) => {
+            if (e.target.value === 'simple') {
+              updateNode(node.id, { condition: 'true' });
+            } else {
+              updateNode(node.id, { condition: ';value1;value2;' });
+            }
+          }}
+          className="w-full"
+        >
+          <option value="simple">Simple (true/false)</option>
+          <option value="switch">Switch (multiple values)</option>
+        </select>
+      </Field>
+
+      {isSimpleCondition ? (
+        <Field label="Condition" hint="When should this branch be shown?">
+          <div className="flex gap-2">
+            <button
+              onClick={() => updateNode(node.id, { condition: 'true' })}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                node.condition === 'true'
+                  ? 'bg-green-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              True
+            </button>
+            <button
+              onClick={() => updateNode(node.id, { condition: 'false' })}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                node.condition === 'false'
+                  ? 'bg-red-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              False
+            </button>
+          </div>
+        </Field>
+      ) : (
+        <Field label="Switch Values" hint="Values that trigger this branch (e.g., ;value1;value2;)">
+          <input
+            type="text"
+            value={node.condition || ''}
+            onChange={(e) => updateNode(node.id, { condition: e.target.value })}
+            className="w-full"
+            placeholder=";value1;value2;"
+          />
+        </Field>
+      )}
+
+      <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+        <p className="text-xs text-purple-700">
+          <strong>Conditional Branch:</strong> Content inside this branch will only be shown when the parent condition set evaluates to this condition value.
         </p>
       </div>
     </div>

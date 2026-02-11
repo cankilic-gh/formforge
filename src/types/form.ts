@@ -262,6 +262,7 @@ export interface BaseNode {
   id: string;
   nodeType: string;
   order?: number;
+  _originalAttrs?: Record<string, string>; // Preserve original XML attributes
 }
 
 // Option (for radio/select)
@@ -331,7 +332,7 @@ export interface FormQuestion extends BaseNode {
 // Conditional
 export interface FormConditional extends BaseNode {
   nodeType: 'conditional';
-  condition: 'true' | 'false' | string; // string for switch conditions like ";value1;value2;"
+  condition?: 'true' | 'false' | string; // string for switch conditions like ";value1;value2;"
   children: FormNode[];
 }
 
@@ -350,7 +351,7 @@ export interface FormEntity extends BaseNode {
   min: number;
   max: number;
   nextOrder: number;
-  showInBarAdmin: boolean;
+  showInBarAdmin?: boolean;
   isAmended: boolean;
   groupType: string;
   ncbeName: string;
@@ -381,7 +382,7 @@ export interface FormRequiredDocument extends BaseNode {
 export interface FormSubSection extends BaseNode {
   nodeType: 'subsection';
   title: string;
-  showInBarAdmin: boolean;
+  showInBarAdmin?: boolean;
   children: FormNode[];
 }
 
@@ -389,7 +390,7 @@ export interface FormSubSection extends BaseNode {
 export interface FormSection extends BaseNode {
   nodeType: 'section';
   title: string;
-  showInBarAdmin: boolean;
+  showInBarAdmin?: boolean;
   children: FormSubSection[];
 }
 
