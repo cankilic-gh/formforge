@@ -72,9 +72,16 @@ const extractOriginalAttrs = (node: Record<string, unknown>): Record<string, str
     if (key.startsWith('@_')) {
       const attrName = key.replace('@_', '');
       const value = node[key];
-      // Only store non-empty string values
-      if (value !== undefined && value !== null && value !== '' && value !== true) {
-        attrs[attrName] = String(value);
+      // Store all non-empty values, including booleans
+      if (value !== undefined && value !== null && value !== '') {
+        // Handle boolean values (fast-xml-parser converts "true"/"false" strings to booleans)
+        if (value === true) {
+          attrs[attrName] = 'true';
+        } else if (value === false) {
+          attrs[attrName] = 'false';
+        } else {
+          attrs[attrName] = String(value);
+        }
       }
     }
   });
