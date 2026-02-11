@@ -503,13 +503,20 @@ export const buildXML = (form: FormQuestionnaire): string => {
     '@_field': ref.field,
   });
 
+  // Helper to convert boolean string values to placeholders
+  const boolPlaceholder = (val: string | undefined): string => {
+    if (val === 'true') return '__BOOL_TRUE__';
+    if (val === 'false') return '__BOOL_FALSE__';
+    return val || '';
+  };
+
   const buildQuestion = (question: FormQuestion) => {
     const overrides: Record<string, unknown> = {
       '@_id': question.id,
       '@_type': question.type,
       '@_format': question.format,
       '@_required': question.required === true ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
-      '@_triggervalue': question.triggerValue || '',
+      '@_triggervalue': boolPlaceholder(question.triggerValue),
       '@_comment': question.comment || '',
     };
 
@@ -586,7 +593,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
         if (cl.conditions && cl.conditions.length > 0) {
           result['condition'] = cl.conditions.map((c) => buildWithOriginalAttrs(c, {
             '@_id': c.id,
-            '@_equals': c.equals,
+            '@_equals': c.equals === 'true' ? '__BOOL_TRUE__' : (c.equals === 'false' ? '__BOOL_FALSE__' : c.equals),
             '@_value': c.value,
             '@_questionid': c.questionId,
           }));
@@ -599,7 +606,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
         const cond = node as FormCondition;
         return buildWithOriginalAttrs(cond, {
           '@_id': cond.id,
-          '@_equals': cond.equals,
+          '@_equals': cond.equals === 'true' ? '__BOOL_TRUE__' : (cond.equals === 'false' ? '__BOOL_FALSE__' : cond.equals),
           '@_value': cond.value,
           '@_questionid': cond.questionId,
         });
@@ -829,13 +836,20 @@ export const buildSubformXML = (form: FormSubform): string => {
     '@_field': ref.field,
   });
 
+  // Helper to convert boolean string values to placeholders
+  const boolPlaceholder = (val: string | undefined): string => {
+    if (val === 'true') return '__BOOL_TRUE__';
+    if (val === 'false') return '__BOOL_FALSE__';
+    return val || '';
+  };
+
   const buildQuestion = (question: FormQuestion) => {
     const overrides: Record<string, unknown> = {
       '@_id': question.id,
       '@_type': question.type,
       '@_format': question.format,
       '@_required': question.required === true ? '__BOOL_TRUE__' : '__BOOL_FALSE__',
-      '@_triggervalue': question.triggerValue || '',
+      '@_triggervalue': boolPlaceholder(question.triggerValue),
       '@_comment': question.comment || '',
     };
 
@@ -912,7 +926,7 @@ export const buildSubformXML = (form: FormSubform): string => {
         if (cl.conditions && cl.conditions.length > 0) {
           result['condition'] = cl.conditions.map((c) => buildWithOriginalAttrs(c, {
             '@_id': c.id,
-            '@_equals': c.equals,
+            '@_equals': c.equals === 'true' ? '__BOOL_TRUE__' : (c.equals === 'false' ? '__BOOL_FALSE__' : c.equals),
             '@_value': c.value,
             '@_questionid': c.questionId,
           }));
@@ -925,7 +939,7 @@ export const buildSubformXML = (form: FormSubform): string => {
         const cond = node as FormCondition;
         return buildWithOriginalAttrs(cond, {
           '@_id': cond.id,
-          '@_equals': cond.equals,
+          '@_equals': cond.equals === 'true' ? '__BOOL_TRUE__' : (cond.equals === 'false' ? '__BOOL_FALSE__' : cond.equals),
           '@_value': cond.value,
           '@_questionid': cond.questionId,
         });
