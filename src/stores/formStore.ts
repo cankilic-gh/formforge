@@ -932,6 +932,7 @@ export const useFormStore = create<FormState>()(
 
           // Find target parent and add the node
           const updatedForm = deepClone(get().form!);
+          const suffix = updatedForm.suffix;
           const parent = findNodeRecursive(updatedForm, targetParentId);
 
           if (parent && 'children' in parent) {
@@ -944,6 +945,32 @@ export const useFormStore = create<FormState>()(
             } else {
               children.push(cloned);
             }
+
+            // After pasting, scan all IDs and update nextId to be higher than max prefix
+            // ID format: prefix + suffix (e.g., "41" + "6013" = "416013")
+            const findMaxPrefix = (node: FormNode): number => {
+              let maxPrefix = 0;
+              if (node.id && node.id.endsWith(suffix)) {
+                const prefixStr = node.id.slice(0, -suffix.length);
+                const prefix = parseInt(prefixStr, 10);
+                if (!isNaN(prefix) && prefix > maxPrefix) {
+                  maxPrefix = prefix;
+                }
+              }
+              if ('children' in node && Array.isArray(node.children)) {
+                for (const child of node.children) {
+                  const childMax = findMaxPrefix(child as FormNode);
+                  if (childMax > maxPrefix) maxPrefix = childMax;
+                }
+              }
+              return maxPrefix;
+            };
+
+            const maxPrefix = findMaxPrefix(updatedForm);
+            if (maxPrefix >= updatedForm.nextId) {
+              updatedForm.nextId = maxPrefix + 1;
+            }
+
             const expanded = new Set(get().expandedNodes);
             expanded.add(targetParentId);
             set({ form: updatedForm, selectedNodeId: cloned.id, expandedNodes: expanded });
