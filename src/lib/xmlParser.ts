@@ -432,9 +432,6 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
       _originalAttrs: extractOriginalAttrs(questionnaire),
     };
 
-    // Auto-regenerate all IDs to ensure uniqueness
-    regenerateAllIds(form);
-
     return form;
   } catch (error) {
     console.error('Failed to parse XML:', error);
@@ -764,9 +761,6 @@ export const parseSubformXML = (xmlString: string): FormSubform | null => {
       children: parseChildren(subform),
       _originalAttrs: extractOriginalAttrs(subform),
     };
-
-    // Auto-regenerate all IDs to ensure uniqueness
-    regenerateAllIdsSubform(form);
 
     return form;
   } catch (error) {
