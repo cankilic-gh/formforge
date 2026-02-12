@@ -270,24 +270,32 @@ const NodePreview: React.FC<{ node: FormNode }> = ({ node }) => {
   }
 };
 
+// Helper to ensure text is always a string
+const ensureString = (text: unknown): string => {
+  if (typeof text === 'string') return text;
+  if (text === null || text === undefined) return '';
+  if (typeof text === 'object') return '';
+  return String(text);
+};
+
 // Description Preview (renders HTML tags like <strong>, <u>, <em>)
 const DescriptionPreview: React.FC<{ description: FormDescription }> = ({ description }) => (
   <div className="form-row mb-2">
-    <div className="qNum">{description.prefix}</div>
+    <div className="qNum">{ensureString(description.prefix)}</div>
     <div>
-      <span className="descControl" dangerouslySetInnerHTML={{ __html: description.text }} />
+      <span className="descControl" dangerouslySetInnerHTML={{ __html: ensureString(description.text) }} />
     </div>
   </div>
 );
 
 // Warning Preview (renders HTML tags)
 const WarningPreview: React.FC<{ warning: FormWarning }> = ({ warning }) => (
-  <div className="alert alert-warning mb-3" dangerouslySetInnerHTML={{ __html: warning.text }} />
+  <div className="alert alert-warning mb-3" dangerouslySetInnerHTML={{ __html: ensureString(warning.text) }} />
 );
 
 // Note Preview (renders HTML tags)
 const NotePreview: React.FC<{ note: FormNote }> = ({ note }) => (
-  <div className="alert alert-info mb-3" dangerouslySetInnerHTML={{ __html: note.text }} />
+  <div className="alert alert-info mb-3" dangerouslySetInnerHTML={{ __html: ensureString(note.text) }} />
 );
 
 // Question Preview
@@ -310,11 +318,11 @@ const QuestionPreview: React.FC<{ question: FormQuestion }> = ({ question }) => 
       {/* Label (renders HTML tags like <strong>, <u>, <em>) */}
       <div className={`${isRadioInline ? 'col' : 'col-4'} ${isRequired ? 'text-danger' : ''}`}>
         <label htmlFor={question.id} className="form-label">
-          <span dangerouslySetInnerHTML={{ __html: description?.text || 'Question' }} />
+          <span dangerouslySetInnerHTML={{ __html: ensureString(description?.text) || 'Question' }} />
           {isRequired && <span className="text-danger">*</span>}
         </label>
         {question.comment && (
-          <small className="d-block text-muted fst-italic" dangerouslySetInnerHTML={{ __html: question.comment }} />
+          <small className="d-block text-muted fst-italic" dangerouslySetInnerHTML={{ __html: ensureString(question.comment) }} />
         )}
       </div>
 
@@ -384,7 +392,7 @@ const QuestionInput: React.FC<{ question: FormQuestion; options: FormOption[] }>
                 style={{ appearance: 'auto' }}
               />
               <label className="form-check-label" htmlFor={opt.id}>
-                {opt.text}
+                {ensureString(opt.text)}
               </label>
             </div>
           ))}
@@ -402,8 +410,8 @@ const QuestionInput: React.FC<{ question: FormQuestion; options: FormOption[] }>
         >
           <option value=""></option>
           {options.map((opt) => (
-            <option key={opt.id} value={opt.value}>
-              {opt.text}
+            <option key={opt.id} value={ensureString(opt.value)}>
+              {ensureString(opt.text)}
             </option>
           ))}
         </select>

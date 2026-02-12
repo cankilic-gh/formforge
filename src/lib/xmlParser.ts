@@ -64,13 +64,43 @@ const getAttrs = (node: OrderedNode): Record<string, unknown> => {
   return node[':@'] || {};
 };
 
-// Get text content from ordered node array
-const getTextFromOrdered = (children: OrderedNode[]): string => {
-  for (const child of children) {
-    if ('#cdata' in child) return String(child['#cdata']);
-    if ('#text' in child) return String(child['#text']);
+// Recursively extract text from any value
+const extractText = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value.map(extractText).filter(Boolean).join('');
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    // Check for text content keys
+    if ('#cdata' in obj) return extractText(obj['#cdata']);
+    if ('#text' in obj) return extractText(obj['#text']);
+    // Try to find any string value
+    for (const key of Object.keys(obj)) {
+      if (!key.startsWith('@_') && !key.startsWith(':')) {
+        const result = extractText(obj[key]);
+        if (result) return result;
+      }
+    }
   }
   return '';
+};
+
+// Get text content from ordered node array
+const getTextFromOrdered = (children: OrderedNode[]): string => {
+  if (!children || !Array.isArray(children)) return '';
+
+  const texts: string[] = [];
+  for (const child of children) {
+    if ('#cdata' in child) {
+      texts.push(extractText(child['#cdata']));
+    } else if ('#text' in child) {
+      texts.push(extractText(child['#text']));
+    }
+  }
+  return texts.filter(Boolean).join('');
 };
 
 // Extract original attributes
