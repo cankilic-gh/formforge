@@ -924,6 +924,20 @@ export const useFormStore = create<FormState>()(
             }
 
             n.id = generateId();
+
+            // Handle conditionlogic's conditions array (separate from children)
+            // Note: condition.questionId should NOT change (it's a reference)
+            // But condition.id SHOULD change
+            if (n.nodeType === 'conditionlogic') {
+              const cl = n as { conditions?: Array<{ id: string; questionId?: string }> };
+              if (Array.isArray(cl.conditions)) {
+                cl.conditions.forEach((cond) => {
+                  cond.id = generateId();
+                  // questionId stays the same - it's a reference to another question
+                });
+              }
+            }
+
             if ('children' in n && Array.isArray(n.children)) {
               n.children.forEach((c) => regenerateIds(c as FormNode));
             }

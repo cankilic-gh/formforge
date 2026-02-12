@@ -532,19 +532,26 @@ export const buildXML = (form: FormQuestionnaire): string => {
     return String(val || '');
   };
 
+  // Helper to create CDATA content in the correct format for preserveOrder mode
+  const makeCdata = (text: string | undefined | null): OrderedNode[] => {
+    const t = text || '';
+    if (!t) return [];
+    return [{ '#cdata': [{ '#text': t }] }];
+  };
+
   const buildDescription = (desc: FormDescription): OrderedNode => {
     const attrs = mergeAttrs(desc._originalAttrs, {
       '@_id': desc.id,
       '@_prefix': desc.prefix,
     });
-    return createOrderedNode('description', attrs, [{ '#cdata': desc.text }]);
+    return createOrderedNode('description', attrs, makeCdata(desc.text));
   };
 
   const buildWarning = (warning: FormWarning): OrderedNode => {
     const attrs = mergeAttrs(warning._originalAttrs, {
       '@_id': warning.id,
     });
-    return createOrderedNode('warning', attrs, [{ '#cdata': warning.text }]);
+    return createOrderedNode('warning', attrs, makeCdata(warning.text));
   };
 
   const buildNote = (note: FormNote): OrderedNode => {
@@ -552,7 +559,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
       '@_id': note.id,
       '@_ischeckitem': String(note.isCheckItem),
     });
-    return createOrderedNode('note', attrs, [{ '#cdata': note.text }]);
+    return createOrderedNode('note', attrs, makeCdata(note.text));
   };
 
   const buildOption = (option: FormOption): OrderedNode => {
@@ -560,7 +567,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
       '@_id': option.id,
       '@_value': option.value,
     });
-    return createOrderedNode('option', attrs, [{ '#cdata': option.text }]);
+    return createOrderedNode('option', attrs, makeCdata(option.text));
   };
 
   const buildReference = (ref: FormReference): OrderedNode => {
@@ -596,7 +603,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
 
     // Build children in order
     const children: OrderedNode[] = [];
-    for (const child of question.children) {
+    for (const child of (question.children || [])) {
       if (child.nodeType === 'description') {
         children.push(buildDescription(child as FormDescription));
       } else if (child.nodeType === 'option') {
@@ -609,17 +616,19 @@ export const buildXML = (form: FormQuestionnaire): string => {
     return createOrderedNode('question', attrs, children);
   };
 
-  const buildCondition = (cond: FormCondition): OrderedNode => {
+  const buildCondition = (cond: FormCondition): OrderedNode | null => {
+    if (!cond) return null;
     const attrs = mergeAttrs(cond._originalAttrs, {
       '@_id': cond.id,
       '@_equals': boolPlaceholder(cond.equals),
-      '@_value': cond.value,
-      '@_questionid': cond.questionId,
+      '@_value': cond.value || '',
+      '@_questionid': cond.questionId || '',
     });
     return createOrderedNode('condition', attrs, []);
   };
 
   const buildNode = (node: FormNode): OrderedNode | null => {
+    if (!node) return null;
     switch (node.nodeType) {
       case 'description':
         return buildDescription(node as FormDescription);
@@ -645,7 +654,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
         if (entity.ilgValue) attrs['@_ilg_value'] = entity.ilgValue;
 
         const children: OrderedNode[] = [];
-        for (const child of entity.children) {
+        for (const child of (entity.children || [])) {
           const built = buildNode(child);
           if (built) children.push(built);
         }
@@ -658,7 +667,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
           '@_operator': cs.operator,
         });
         const children: OrderedNode[] = [];
-        for (const child of cs.children) {
+        for (const child of (cs.children || [])) {
           const built = buildNode(child);
           if (built) children.push(built);
         }
@@ -674,11 +683,12 @@ export const buildXML = (form: FormQuestionnaire): string => {
         // Add conditions first
         if (cl.conditions) {
           for (const cond of cl.conditions) {
-            children.push(buildCondition(cond));
+            const built = buildCondition(cond);
+            if (built) children.push(built);
           }
         }
         // Add other children
-        for (const child of cl.children) {
+        for (const child of (cl.children || [])) {
           const built = buildNode(child);
           if (built) children.push(built);
         }
@@ -690,7 +700,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
           '@_id': cond.id,
         });
         const children: OrderedNode[] = [];
-        for (const child of cond.children) {
+        for (const child of (cond.children || [])) {
           const built = buildNode(child);
           if (built) children.push(built);
         }
@@ -728,7 +738,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
       '@_title': subsection.title,
     });
     const children: OrderedNode[] = [];
-    for (const child of subsection.children) {
+    for (const child of (subsection.children || [])) {
       const built = buildNode(child);
       if (built) children.push(built);
     }
@@ -741,7 +751,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
       '@_title': section.title,
     });
     const children: OrderedNode[] = [];
-    for (const sub of section.children) {
+    for (const sub of (section.children || [])) {
       children.push(buildSubSection(sub));
     }
     return createOrderedNode('section', attrs, children);
@@ -756,7 +766,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
   });
 
   const sectionNodes: OrderedNode[] = [];
-  for (const section of form.children) {
+  for (const section of (form.children || [])) {
     sectionNodes.push(buildSection(section));
   }
 
@@ -876,19 +886,26 @@ export const buildSubformXML = (form: FormSubform): string => {
     return String(val || '');
   };
 
+  // Helper to create CDATA content in the correct format for preserveOrder mode
+  const makeCdata = (text: string | undefined | null): OrderedNode[] => {
+    const t = text || '';
+    if (!t) return [];
+    return [{ '#cdata': [{ '#text': t }] }];
+  };
+
   const buildDescription = (desc: FormDescription): OrderedNode => {
     const attrs = mergeAttrs(desc._originalAttrs, {
       '@_id': desc.id,
       '@_prefix': desc.prefix,
     });
-    return createOrderedNode('description', attrs, [{ '#cdata': desc.text }]);
+    return createOrderedNode('description', attrs, makeCdata(desc.text));
   };
 
   const buildWarning = (warning: FormWarning): OrderedNode => {
     const attrs = mergeAttrs(warning._originalAttrs, {
       '@_id': warning.id,
     });
-    return createOrderedNode('warning', attrs, [{ '#cdata': warning.text }]);
+    return createOrderedNode('warning', attrs, makeCdata(warning.text));
   };
 
   const buildNote = (note: FormNote): OrderedNode => {
@@ -896,7 +913,7 @@ export const buildSubformXML = (form: FormSubform): string => {
       '@_id': note.id,
       '@_ischeckitem': String(note.isCheckItem),
     });
-    return createOrderedNode('note', attrs, [{ '#cdata': note.text }]);
+    return createOrderedNode('note', attrs, makeCdata(note.text));
   };
 
   const buildOption = (option: FormOption): OrderedNode => {
@@ -904,7 +921,7 @@ export const buildSubformXML = (form: FormSubform): string => {
       '@_id': option.id,
       '@_value': option.value,
     });
-    return createOrderedNode('option', attrs, [{ '#cdata': option.text }]);
+    return createOrderedNode('option', attrs, makeCdata(option.text));
   };
 
   const buildReference = (ref: FormReference): OrderedNode => {
@@ -939,7 +956,7 @@ export const buildSubformXML = (form: FormSubform): string => {
     if (question.ilgName) attrs['@_ilg_name'] = question.ilgName;
 
     const children: OrderedNode[] = [];
-    for (const child of question.children) {
+    for (const child of (question.children || [])) {
       if (child.nodeType === 'description') {
         children.push(buildDescription(child as FormDescription));
       } else if (child.nodeType === 'option') {
@@ -952,17 +969,19 @@ export const buildSubformXML = (form: FormSubform): string => {
     return createOrderedNode('question', attrs, children);
   };
 
-  const buildCondition = (cond: FormCondition): OrderedNode => {
+  const buildCondition = (cond: FormCondition): OrderedNode | null => {
+    if (!cond) return null;
     const attrs = mergeAttrs(cond._originalAttrs, {
       '@_id': cond.id,
       '@_equals': boolPlaceholder(cond.equals),
-      '@_value': cond.value,
-      '@_questionid': cond.questionId,
+      '@_value': cond.value || '',
+      '@_questionid': cond.questionId || '',
     });
     return createOrderedNode('condition', attrs, []);
   };
 
   const buildNode = (node: FormNode): OrderedNode | null => {
+    if (!node) return null;
     switch (node.nodeType) {
       case 'description':
         return buildDescription(node as FormDescription);
@@ -988,7 +1007,7 @@ export const buildSubformXML = (form: FormSubform): string => {
         if (entity.ilgValue) attrs['@_ilg_value'] = entity.ilgValue;
 
         const children: OrderedNode[] = [];
-        for (const child of entity.children) {
+        for (const child of (entity.children || [])) {
           const built = buildNode(child);
           if (built) children.push(built);
         }
@@ -1001,7 +1020,7 @@ export const buildSubformXML = (form: FormSubform): string => {
           '@_operator': cs.operator,
         });
         const children: OrderedNode[] = [];
-        for (const child of cs.children) {
+        for (const child of (cs.children || [])) {
           const built = buildNode(child);
           if (built) children.push(built);
         }
@@ -1016,10 +1035,11 @@ export const buildSubformXML = (form: FormSubform): string => {
         const children: OrderedNode[] = [];
         if (cl.conditions) {
           for (const cond of cl.conditions) {
-            children.push(buildCondition(cond));
+            const built = buildCondition(cond);
+            if (built) children.push(built);
           }
         }
-        for (const child of cl.children) {
+        for (const child of (cl.children || [])) {
           const built = buildNode(child);
           if (built) children.push(built);
         }
@@ -1031,7 +1051,7 @@ export const buildSubformXML = (form: FormSubform): string => {
           '@_id': cond.id,
         });
         const children: OrderedNode[] = [];
-        for (const child of cond.children) {
+        for (const child of (cond.children || [])) {
           const built = buildNode(child);
           if (built) children.push(built);
         }
@@ -1073,7 +1093,7 @@ export const buildSubformXML = (form: FormSubform): string => {
   });
 
   const childNodes: OrderedNode[] = [];
-  for (const child of form.children) {
+  for (const child of (form.children || [])) {
     const built = buildNode(child);
     if (built) childNodes.push(built);
   }
