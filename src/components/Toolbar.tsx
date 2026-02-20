@@ -289,10 +289,28 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   };
 
   const handlePaste = async () => {
-    const clipboardData = localStorage.getItem('formforge-clipboard');
-    if (clipboardData) {
-      await showAlert('Coming Soon', 'Paste functionality coming soon');
+    const { pasteNode, canPaste } = useFormStore.getState();
+
+    if (!selectedNodeId) {
+      await showAlert('No Selection', 'Please select a node to paste into.');
+      return;
     }
+
+    // Check if clipboard has data
+    const clipboardData = localStorage.getItem('formforge-clipboard');
+    if (!clipboardData) {
+      await showAlert('Empty Clipboard', 'Nothing to paste. Copy a node first.');
+      return;
+    }
+
+    // Check if we can paste at the selected location
+    if (!canPaste(selectedNodeId)) {
+      await showAlert('Cannot Paste', 'The copied node cannot be pasted at this location. Check the node type compatibility.');
+      return;
+    }
+
+    // Perform the paste
+    pasteNode(selectedNodeId);
   };
 
   const handleDelete = async () => {

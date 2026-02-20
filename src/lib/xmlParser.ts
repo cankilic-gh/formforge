@@ -477,285 +477,311 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
   }
 };
 
-// Build XML from form
+// ============================================================================
+// SHARED XML BUILDER HELPERS
+// These helpers are used by both buildXML and buildSubformXML to avoid DRY
+// ============================================================================
+
+// Helper to create ordered node with attributes
+const createOrderedNode = (
+  tagName: string,
+  attrs: Record<string, unknown>,
+  children: OrderedNode[] = []
+): OrderedNode => {
+  const node: OrderedNode = {};
+  if (Object.keys(attrs).length > 0) {
+    node[':@'] = attrs;
+  }
+  node[tagName] = children;
+  return node;
+};
+
+// Helper to merge original attributes with overrides
+const mergeAttrs = (
+  original: Record<string, string> | undefined,
+  overrides: Record<string, unknown>
+): Record<string, unknown> => {
+  const result: Record<string, unknown> = {};
+
+  // First copy original attributes
+  if (original) {
+    Object.entries(original).forEach(([key, value]) => {
+      if (value === 'true') {
+        result[`@_${key}`] = '__BOOL_TRUE__';
+      } else if (value === 'false') {
+        result[`@_${key}`] = '__BOOL_FALSE__';
+      } else {
+        result[`@_${key}`] = value;
+      }
+    });
+  }
+
+  // Then apply overrides
+  Object.entries(overrides).forEach(([key, value]) => {
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  });
+
+  return result;
+};
+
+// Helper for boolean placeholders
+const boolPlaceholder = (val: string | boolean | undefined): string => {
+  if (val === true || val === 'true') return '__BOOL_TRUE__';
+  if (val === false || val === 'false') return '__BOOL_FALSE__';
+  return String(val || '');
+};
+
+// Helper to create CDATA content in the correct format for preserveOrder mode
+const makeCdata = (text: string | undefined | null): OrderedNode[] => {
+  const t = text || '';
+  if (!t) return [];
+  return [{ '#cdata': [{ '#text': t }] }];
+};
+
+// Build Description node
+const buildDescription = (desc: FormDescription): OrderedNode => {
+  const attrs = mergeAttrs(desc._originalAttrs, {
+    '@_id': desc.id,
+    '@_prefix': desc.prefix,
+  });
+  return createOrderedNode('description', attrs, makeCdata(desc.text));
+};
+
+// Build Warning node
+const buildWarning = (warning: FormWarning): OrderedNode => {
+  const attrs = mergeAttrs(warning._originalAttrs, {
+    '@_id': warning.id,
+  });
+  return createOrderedNode('warning', attrs, makeCdata(warning.text));
+};
+
+// Build Note node
+const buildNote = (note: FormNote): OrderedNode => {
+  const attrs = mergeAttrs(note._originalAttrs, {
+    '@_id': note.id,
+    '@_ischeckitem': String(note.isCheckItem),
+  });
+  return createOrderedNode('note', attrs, makeCdata(note.text));
+};
+
+// Build Option node
+const buildOption = (option: FormOption): OrderedNode => {
+  const attrs = mergeAttrs(option._originalAttrs, {
+    '@_id': option.id,
+    '@_value': option.value,
+  });
+  return createOrderedNode('option', attrs, makeCdata(option.text));
+};
+
+// Build Reference node
+const buildReference = (ref: FormReference): OrderedNode => {
+  const attrs = mergeAttrs(ref._originalAttrs, {
+    '@_id': ref.id,
+    '@_table': ref.table,
+    '@_field': ref.field,
+  });
+  return createOrderedNode('reference', attrs, []);
+};
+
+// Build Question node
+const buildQuestion = (question: FormQuestion): OrderedNode => {
+  const attrs = mergeAttrs(question._originalAttrs, {
+    '@_id': question.id,
+    '@_type': question.type,
+    '@_format': question.format,
+    '@_required': boolPlaceholder(question.required),
+    '@_triggervalue': boolPlaceholder(question.triggerValue),
+    '@_comment': question.comment || '',
+  });
+
+  if (question.maxlength) attrs['@_maxlength'] = String(question.maxlength);
+  if (question.option) attrs['@_option'] = question.option;
+  if (question.refname) attrs['@_refname'] = question.refname;
+  if (question.appType) attrs['@_app_type'] = question.appType;
+  if (question.appTypeTrigger) attrs['@_app_type_trigger'] = question.appTypeTrigger;
+  if (question.isAmended) attrs['@_isamended'] = '__BOOL_TRUE__';
+  if (question.validatorClass) attrs['@_validatorclass'] = question.validatorClass;
+  if (question.validationMessage) attrs['@_validationmessage'] = question.validationMessage;
+  if (question.ncbeName) attrs['@_ncbe_name'] = question.ncbeName;
+  if (question.ncbeCurrently) attrs['@_ncbe_currently'] = '__BOOL_TRUE__';
+  if (question.ilgName) attrs['@_ilg_name'] = question.ilgName;
+
+  // Build children in order
+  const children: OrderedNode[] = [];
+  for (const child of (question.children || [])) {
+    if (child.nodeType === 'description') {
+      children.push(buildDescription(child as FormDescription));
+    } else if (child.nodeType === 'option') {
+      children.push(buildOption(child as FormOption));
+    } else if (child.nodeType === 'reference') {
+      children.push(buildReference(child as FormReference));
+    }
+  }
+
+  return createOrderedNode('question', attrs, children);
+};
+
+// Build Condition node
+const buildCondition = (cond: FormCondition): OrderedNode | null => {
+  if (!cond) return null;
+  const attrs = mergeAttrs(cond._originalAttrs, {
+    '@_id': cond.id,
+    '@_equals': boolPlaceholder(cond.equals),
+    '@_value': cond.value || '',
+    '@_questionid': cond.questionId || '',
+  });
+  return createOrderedNode('condition', attrs, []);
+};
+
+// Build generic node (recursive)
+const buildNode = (node: FormNode): OrderedNode | null => {
+  if (!node) return null;
+  switch (node.nodeType) {
+    case 'description':
+      return buildDescription(node as FormDescription);
+    case 'warning':
+      return buildWarning(node as FormWarning);
+    case 'note':
+      return buildNote(node as FormNote);
+    case 'question':
+      return buildQuestion(node as FormQuestion);
+    case 'entity': {
+      const entity = node as FormEntity;
+      const attrs = mergeAttrs(entity._originalAttrs, {
+        '@_id': entity.id,
+        '@_title': entity.title,
+        '@_type': entity.type,
+        '@_min': String(entity.min || 0),
+        '@_max': String(entity.max || 0),
+      });
+      if (entity.groupType) attrs['@_grouptype'] = entity.groupType;
+      if (entity.ncbeName) attrs['@_ncbe_name'] = entity.ncbeName;
+      if (entity.ncbeValue) attrs['@_ncbe_value'] = entity.ncbeValue;
+      if (entity.ilgName) attrs['@_ilg_name'] = entity.ilgName;
+      if (entity.ilgValue) attrs['@_ilg_value'] = entity.ilgValue;
+
+      const children: OrderedNode[] = [];
+      for (const child of (entity.children || [])) {
+        const built = buildNode(child);
+        if (built) children.push(built);
+      }
+      return createOrderedNode('entity', attrs, children);
+    }
+    case 'conditionset': {
+      const cs = node as FormConditionSet;
+      const attrs = mergeAttrs(cs._originalAttrs, {
+        '@_id': cs.id,
+        '@_operator': cs.operator,
+      });
+      const children: OrderedNode[] = [];
+      for (const child of (cs.children || [])) {
+        const built = buildNode(child);
+        if (built) children.push(built);
+      }
+      return createOrderedNode('conditionset', attrs, children);
+    }
+    case 'conditionlogic': {
+      const cl = node as FormConditionLogic;
+      const attrs = mergeAttrs(cl._originalAttrs, {
+        '@_id': cl.id,
+        '@_operator': cl.operator,
+      });
+      const children: OrderedNode[] = [];
+      // Add conditions first
+      if (cl.conditions) {
+        for (const cond of cl.conditions) {
+          const built = buildCondition(cond);
+          if (built) children.push(built);
+        }
+      }
+      // Add other children
+      for (const child of (cl.children || [])) {
+        const built = buildNode(child);
+        if (built) children.push(built);
+      }
+      return createOrderedNode('conditionlogic', attrs, children);
+    }
+    case 'conditional': {
+      const cond = node as FormConditional;
+      const attrs = mergeAttrs(cond._originalAttrs, {
+        '@_id': cond.id,
+      });
+      const children: OrderedNode[] = [];
+      for (const child of (cond.children || [])) {
+        const built = buildNode(child);
+        if (built) children.push(built);
+      }
+      return createOrderedNode('conditional', attrs, children);
+    }
+    case 'includeform': {
+      const inc = node as FormIncludeForm;
+      const attrs = mergeAttrs(inc._originalAttrs, {
+        '@_id': inc.id,
+        '@_formname': inc.formName,
+        '@_title': inc.title,
+        '@_type': inc.type,
+        '@_multipleinclude': boolPlaceholder(inc.multipleInclude),
+        '@_required': boolPlaceholder(inc.required),
+      });
+      return createOrderedNode('includeform', attrs, []);
+    }
+    case 'required-doc': {
+      const doc = node as FormRequiredDocument;
+      const attrs = mergeAttrs(doc._originalAttrs, {
+        '@_id': doc.id,
+        '@_title': doc.title,
+        '@_preventsubmit': boolPlaceholder(doc.preventSubmit),
+      });
+      return createOrderedNode('required-doc', attrs, []);
+    }
+    default:
+      return null;
+  }
+};
+
+// Build SubSection node
+const buildSubSection = (subsection: FormSubSection): OrderedNode => {
+  const attrs = mergeAttrs(subsection._originalAttrs, {
+    '@_id': subsection.id,
+    '@_title': subsection.title,
+  });
+  const children: OrderedNode[] = [];
+  for (const child of (subsection.children || [])) {
+    const built = buildNode(child);
+    if (built) children.push(built);
+  }
+  return createOrderedNode('subsection', attrs, children);
+};
+
+// Build Section node
+const buildSection = (section: FormSection): OrderedNode => {
+  const attrs = mergeAttrs(section._originalAttrs, {
+    '@_id': section.id,
+    '@_title': section.title,
+  });
+  const children: OrderedNode[] = [];
+  for (const sub of (section.children || [])) {
+    children.push(buildSubSection(sub));
+  }
+  return createOrderedNode('section', attrs, children);
+};
+
+// Post-process XML to fix boolean placeholders
+const fixBooleanPlaceholders = (xmlContent: string): string => {
+  return xmlContent
+    .replace(/__BOOL_TRUE__/g, 'true')
+    .replace(/__BOOL_FALSE__/g, 'false');
+};
+
+// ============================================================================
+// PUBLIC BUILD FUNCTIONS
+// ============================================================================
+
+// Build XML from form (questionnaire)
 export const buildXML = (form: FormQuestionnaire): string => {
   const builder = new XMLBuilder(builderOptions);
-
-  // Helper to create ordered node with attributes
-  const createOrderedNode = (
-    tagName: string,
-    attrs: Record<string, unknown>,
-    children: OrderedNode[] = []
-  ): OrderedNode => {
-    const node: OrderedNode = {};
-    if (Object.keys(attrs).length > 0) {
-      node[':@'] = attrs;
-    }
-    node[tagName] = children;
-    return node;
-  };
-
-  // Helper to merge original attributes with overrides
-  const mergeAttrs = (
-    original: Record<string, string> | undefined,
-    overrides: Record<string, unknown>
-  ): Record<string, unknown> => {
-    const result: Record<string, unknown> = {};
-
-    // First copy original attributes
-    if (original) {
-      Object.entries(original).forEach(([key, value]) => {
-        if (value === 'true') {
-          result[`@_${key}`] = '__BOOL_TRUE__';
-        } else if (value === 'false') {
-          result[`@_${key}`] = '__BOOL_FALSE__';
-        } else {
-          result[`@_${key}`] = value;
-        }
-      });
-    }
-
-    // Then apply overrides
-    Object.entries(overrides).forEach(([key, value]) => {
-      if (value !== undefined) {
-        result[key] = value;
-      }
-    });
-
-    return result;
-  };
-
-  // Helper for boolean placeholders
-  const boolPlaceholder = (val: string | boolean | undefined): string => {
-    if (val === true || val === 'true') return '__BOOL_TRUE__';
-    if (val === false || val === 'false') return '__BOOL_FALSE__';
-    return String(val || '');
-  };
-
-  // Helper to create CDATA content in the correct format for preserveOrder mode
-  const makeCdata = (text: string | undefined | null): OrderedNode[] => {
-    const t = text || '';
-    if (!t) return [];
-    return [{ '#cdata': [{ '#text': t }] }];
-  };
-
-  const buildDescription = (desc: FormDescription): OrderedNode => {
-    const attrs = mergeAttrs(desc._originalAttrs, {
-      '@_id': desc.id,
-      '@_prefix': desc.prefix,
-    });
-    return createOrderedNode('description', attrs, makeCdata(desc.text));
-  };
-
-  const buildWarning = (warning: FormWarning): OrderedNode => {
-    const attrs = mergeAttrs(warning._originalAttrs, {
-      '@_id': warning.id,
-    });
-    return createOrderedNode('warning', attrs, makeCdata(warning.text));
-  };
-
-  const buildNote = (note: FormNote): OrderedNode => {
-    const attrs = mergeAttrs(note._originalAttrs, {
-      '@_id': note.id,
-      '@_ischeckitem': String(note.isCheckItem),
-    });
-    return createOrderedNode('note', attrs, makeCdata(note.text));
-  };
-
-  const buildOption = (option: FormOption): OrderedNode => {
-    const attrs = mergeAttrs(option._originalAttrs, {
-      '@_id': option.id,
-      '@_value': option.value,
-    });
-    return createOrderedNode('option', attrs, makeCdata(option.text));
-  };
-
-  const buildReference = (ref: FormReference): OrderedNode => {
-    const attrs = mergeAttrs(ref._originalAttrs, {
-      '@_id': ref.id,
-      '@_table': ref.table,
-      '@_field': ref.field,
-    });
-    return createOrderedNode('reference', attrs, []);
-  };
-
-  const buildQuestion = (question: FormQuestion): OrderedNode => {
-    const attrs = mergeAttrs(question._originalAttrs, {
-      '@_id': question.id,
-      '@_type': question.type,
-      '@_format': question.format,
-      '@_required': boolPlaceholder(question.required),
-      '@_triggervalue': boolPlaceholder(question.triggerValue),
-      '@_comment': question.comment || '',
-    });
-
-    if (question.maxlength) attrs['@_maxlength'] = String(question.maxlength);
-    if (question.option) attrs['@_option'] = question.option;
-    if (question.refname) attrs['@_refname'] = question.refname;
-    if (question.appType) attrs['@_app_type'] = question.appType;
-    if (question.appTypeTrigger) attrs['@_app_type_trigger'] = question.appTypeTrigger;
-    if (question.isAmended) attrs['@_isamended'] = '__BOOL_TRUE__';
-    if (question.validatorClass) attrs['@_validatorclass'] = question.validatorClass;
-    if (question.validationMessage) attrs['@_validationmessage'] = question.validationMessage;
-    if (question.ncbeName) attrs['@_ncbe_name'] = question.ncbeName;
-    if (question.ncbeCurrently) attrs['@_ncbe_currently'] = '__BOOL_TRUE__';
-    if (question.ilgName) attrs['@_ilg_name'] = question.ilgName;
-
-    // Build children in order
-    const children: OrderedNode[] = [];
-    for (const child of (question.children || [])) {
-      if (child.nodeType === 'description') {
-        children.push(buildDescription(child as FormDescription));
-      } else if (child.nodeType === 'option') {
-        children.push(buildOption(child as FormOption));
-      } else if (child.nodeType === 'reference') {
-        children.push(buildReference(child as FormReference));
-      }
-    }
-
-    return createOrderedNode('question', attrs, children);
-  };
-
-  const buildCondition = (cond: FormCondition): OrderedNode | null => {
-    if (!cond) return null;
-    const attrs = mergeAttrs(cond._originalAttrs, {
-      '@_id': cond.id,
-      '@_equals': boolPlaceholder(cond.equals),
-      '@_value': cond.value || '',
-      '@_questionid': cond.questionId || '',
-    });
-    return createOrderedNode('condition', attrs, []);
-  };
-
-  const buildNode = (node: FormNode): OrderedNode | null => {
-    if (!node) return null;
-    switch (node.nodeType) {
-      case 'description':
-        return buildDescription(node as FormDescription);
-      case 'warning':
-        return buildWarning(node as FormWarning);
-      case 'note':
-        return buildNote(node as FormNote);
-      case 'question':
-        return buildQuestion(node as FormQuestion);
-      case 'entity': {
-        const entity = node as FormEntity;
-        const attrs = mergeAttrs(entity._originalAttrs, {
-          '@_id': entity.id,
-          '@_title': entity.title,
-          '@_type': entity.type,
-          '@_min': String(entity.min || 0),
-          '@_max': String(entity.max || 0),
-        });
-        if (entity.groupType) attrs['@_grouptype'] = entity.groupType;
-        if (entity.ncbeName) attrs['@_ncbe_name'] = entity.ncbeName;
-        if (entity.ncbeValue) attrs['@_ncbe_value'] = entity.ncbeValue;
-        if (entity.ilgName) attrs['@_ilg_name'] = entity.ilgName;
-        if (entity.ilgValue) attrs['@_ilg_value'] = entity.ilgValue;
-
-        const children: OrderedNode[] = [];
-        for (const child of (entity.children || [])) {
-          const built = buildNode(child);
-          if (built) children.push(built);
-        }
-        return createOrderedNode('entity', attrs, children);
-      }
-      case 'conditionset': {
-        const cs = node as FormConditionSet;
-        const attrs = mergeAttrs(cs._originalAttrs, {
-          '@_id': cs.id,
-          '@_operator': cs.operator,
-        });
-        const children: OrderedNode[] = [];
-        for (const child of (cs.children || [])) {
-          const built = buildNode(child);
-          if (built) children.push(built);
-        }
-        return createOrderedNode('conditionset', attrs, children);
-      }
-      case 'conditionlogic': {
-        const cl = node as FormConditionLogic;
-        const attrs = mergeAttrs(cl._originalAttrs, {
-          '@_id': cl.id,
-          '@_operator': cl.operator,
-        });
-        const children: OrderedNode[] = [];
-        // Add conditions first
-        if (cl.conditions) {
-          for (const cond of cl.conditions) {
-            const built = buildCondition(cond);
-            if (built) children.push(built);
-          }
-        }
-        // Add other children
-        for (const child of (cl.children || [])) {
-          const built = buildNode(child);
-          if (built) children.push(built);
-        }
-        return createOrderedNode('conditionlogic', attrs, children);
-      }
-      case 'conditional': {
-        const cond = node as FormConditional;
-        const attrs = mergeAttrs(cond._originalAttrs, {
-          '@_id': cond.id,
-        });
-        const children: OrderedNode[] = [];
-        for (const child of (cond.children || [])) {
-          const built = buildNode(child);
-          if (built) children.push(built);
-        }
-        return createOrderedNode('conditional', attrs, children);
-      }
-      case 'includeform': {
-        const inc = node as FormIncludeForm;
-        const attrs = mergeAttrs(inc._originalAttrs, {
-          '@_id': inc.id,
-          '@_formname': inc.formName,
-          '@_title': inc.title,
-          '@_type': inc.type,
-          '@_multipleinclude': boolPlaceholder(inc.multipleInclude),
-          '@_required': boolPlaceholder(inc.required),
-        });
-        return createOrderedNode('includeform', attrs, []);
-      }
-      case 'required-doc': {
-        const doc = node as FormRequiredDocument;
-        const attrs = mergeAttrs(doc._originalAttrs, {
-          '@_id': doc.id,
-          '@_title': doc.title,
-          '@_preventsubmit': boolPlaceholder(doc.preventSubmit),
-        });
-        return createOrderedNode('required-doc', attrs, []);
-      }
-      default:
-        return null;
-    }
-  };
-
-  const buildSubSection = (subsection: FormSubSection): OrderedNode => {
-    const attrs = mergeAttrs(subsection._originalAttrs, {
-      '@_id': subsection.id,
-      '@_title': subsection.title,
-    });
-    const children: OrderedNode[] = [];
-    for (const child of (subsection.children || [])) {
-      const built = buildNode(child);
-      if (built) children.push(built);
-    }
-    return createOrderedNode('subsection', attrs, children);
-  };
-
-  const buildSection = (section: FormSection): OrderedNode => {
-    const attrs = mergeAttrs(section._originalAttrs, {
-      '@_id': section.id,
-      '@_title': section.title,
-    });
-    const children: OrderedNode[] = [];
-    for (const sub of (section.children || [])) {
-      children.push(buildSubSection(sub));
-    }
-    return createOrderedNode('section', attrs, children);
-  };
 
   // Build questionnaire
   const questionnaireAttrs = mergeAttrs(form._originalAttrs, {
@@ -775,10 +801,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
   ];
 
   const xmlContent = builder.build(xmlObj);
-  const fixedXml = xmlContent
-    .replace(/__BOOL_TRUE__/g, 'true')
-    .replace(/__BOOL_FALSE__/g, 'false');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${fixedXml}`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${fixBooleanPlaceholders(xmlContent)}`;
 };
 
 // Create empty form
@@ -834,254 +857,9 @@ export const parseSubformXML = (xmlString: string): FormSubform | null => {
   }
 };
 
-// Build Subform XML
+// Build Subform XML - now uses shared helpers
 export const buildSubformXML = (form: FormSubform): string => {
   const builder = new XMLBuilder(builderOptions);
-
-  // Helper to create ordered node with attributes
-  const createOrderedNode = (
-    tagName: string,
-    attrs: Record<string, unknown>,
-    children: OrderedNode[] = []
-  ): OrderedNode => {
-    const node: OrderedNode = {};
-    if (Object.keys(attrs).length > 0) {
-      node[':@'] = attrs;
-    }
-    node[tagName] = children;
-    return node;
-  };
-
-  // Helper to merge original attributes with overrides
-  const mergeAttrs = (
-    original: Record<string, string> | undefined,
-    overrides: Record<string, unknown>
-  ): Record<string, unknown> => {
-    const result: Record<string, unknown> = {};
-
-    if (original) {
-      Object.entries(original).forEach(([key, value]) => {
-        if (value === 'true') {
-          result[`@_${key}`] = '__BOOL_TRUE__';
-        } else if (value === 'false') {
-          result[`@_${key}`] = '__BOOL_FALSE__';
-        } else {
-          result[`@_${key}`] = value;
-        }
-      });
-    }
-
-    Object.entries(overrides).forEach(([key, value]) => {
-      if (value !== undefined) {
-        result[key] = value;
-      }
-    });
-
-    return result;
-  };
-
-  const boolPlaceholder = (val: string | boolean | undefined): string => {
-    if (val === true || val === 'true') return '__BOOL_TRUE__';
-    if (val === false || val === 'false') return '__BOOL_FALSE__';
-    return String(val || '');
-  };
-
-  // Helper to create CDATA content in the correct format for preserveOrder mode
-  const makeCdata = (text: string | undefined | null): OrderedNode[] => {
-    const t = text || '';
-    if (!t) return [];
-    return [{ '#cdata': [{ '#text': t }] }];
-  };
-
-  const buildDescription = (desc: FormDescription): OrderedNode => {
-    const attrs = mergeAttrs(desc._originalAttrs, {
-      '@_id': desc.id,
-      '@_prefix': desc.prefix,
-    });
-    return createOrderedNode('description', attrs, makeCdata(desc.text));
-  };
-
-  const buildWarning = (warning: FormWarning): OrderedNode => {
-    const attrs = mergeAttrs(warning._originalAttrs, {
-      '@_id': warning.id,
-    });
-    return createOrderedNode('warning', attrs, makeCdata(warning.text));
-  };
-
-  const buildNote = (note: FormNote): OrderedNode => {
-    const attrs = mergeAttrs(note._originalAttrs, {
-      '@_id': note.id,
-      '@_ischeckitem': String(note.isCheckItem),
-    });
-    return createOrderedNode('note', attrs, makeCdata(note.text));
-  };
-
-  const buildOption = (option: FormOption): OrderedNode => {
-    const attrs = mergeAttrs(option._originalAttrs, {
-      '@_id': option.id,
-      '@_value': option.value,
-    });
-    return createOrderedNode('option', attrs, makeCdata(option.text));
-  };
-
-  const buildReference = (ref: FormReference): OrderedNode => {
-    const attrs = mergeAttrs(ref._originalAttrs, {
-      '@_id': ref.id,
-      '@_table': ref.table,
-      '@_field': ref.field,
-    });
-    return createOrderedNode('reference', attrs, []);
-  };
-
-  const buildQuestion = (question: FormQuestion): OrderedNode => {
-    const attrs = mergeAttrs(question._originalAttrs, {
-      '@_id': question.id,
-      '@_type': question.type,
-      '@_format': question.format,
-      '@_required': boolPlaceholder(question.required),
-      '@_triggervalue': boolPlaceholder(question.triggerValue),
-      '@_comment': question.comment || '',
-    });
-
-    if (question.maxlength) attrs['@_maxlength'] = String(question.maxlength);
-    if (question.option) attrs['@_option'] = question.option;
-    if (question.refname) attrs['@_refname'] = question.refname;
-    if (question.appType) attrs['@_app_type'] = question.appType;
-    if (question.appTypeTrigger) attrs['@_app_type_trigger'] = question.appTypeTrigger;
-    if (question.isAmended) attrs['@_isamended'] = '__BOOL_TRUE__';
-    if (question.validatorClass) attrs['@_validatorclass'] = question.validatorClass;
-    if (question.validationMessage) attrs['@_validationmessage'] = question.validationMessage;
-    if (question.ncbeName) attrs['@_ncbe_name'] = question.ncbeName;
-    if (question.ncbeCurrently) attrs['@_ncbe_currently'] = '__BOOL_TRUE__';
-    if (question.ilgName) attrs['@_ilg_name'] = question.ilgName;
-
-    const children: OrderedNode[] = [];
-    for (const child of (question.children || [])) {
-      if (child.nodeType === 'description') {
-        children.push(buildDescription(child as FormDescription));
-      } else if (child.nodeType === 'option') {
-        children.push(buildOption(child as FormOption));
-      } else if (child.nodeType === 'reference') {
-        children.push(buildReference(child as FormReference));
-      }
-    }
-
-    return createOrderedNode('question', attrs, children);
-  };
-
-  const buildCondition = (cond: FormCondition): OrderedNode | null => {
-    if (!cond) return null;
-    const attrs = mergeAttrs(cond._originalAttrs, {
-      '@_id': cond.id,
-      '@_equals': boolPlaceholder(cond.equals),
-      '@_value': cond.value || '',
-      '@_questionid': cond.questionId || '',
-    });
-    return createOrderedNode('condition', attrs, []);
-  };
-
-  const buildNode = (node: FormNode): OrderedNode | null => {
-    if (!node) return null;
-    switch (node.nodeType) {
-      case 'description':
-        return buildDescription(node as FormDescription);
-      case 'warning':
-        return buildWarning(node as FormWarning);
-      case 'note':
-        return buildNote(node as FormNote);
-      case 'question':
-        return buildQuestion(node as FormQuestion);
-      case 'entity': {
-        const entity = node as FormEntity;
-        const attrs = mergeAttrs(entity._originalAttrs, {
-          '@_id': entity.id,
-          '@_title': entity.title,
-          '@_type': entity.type,
-          '@_min': String(entity.min || ''),
-          '@_max': String(entity.max || ''),
-        });
-        if (entity.groupType) attrs['@_grouptype'] = entity.groupType;
-        if (entity.ncbeName) attrs['@_ncbe_name'] = entity.ncbeName;
-        if (entity.ncbeValue) attrs['@_ncbe_value'] = entity.ncbeValue;
-        if (entity.ilgName) attrs['@_ilg_name'] = entity.ilgName;
-        if (entity.ilgValue) attrs['@_ilg_value'] = entity.ilgValue;
-
-        const children: OrderedNode[] = [];
-        for (const child of (entity.children || [])) {
-          const built = buildNode(child);
-          if (built) children.push(built);
-        }
-        return createOrderedNode('entity', attrs, children);
-      }
-      case 'conditionset': {
-        const cs = node as FormConditionSet;
-        const attrs = mergeAttrs(cs._originalAttrs, {
-          '@_id': cs.id,
-          '@_operator': cs.operator,
-        });
-        const children: OrderedNode[] = [];
-        for (const child of (cs.children || [])) {
-          const built = buildNode(child);
-          if (built) children.push(built);
-        }
-        return createOrderedNode('conditionset', attrs, children);
-      }
-      case 'conditionlogic': {
-        const cl = node as FormConditionLogic;
-        const attrs = mergeAttrs(cl._originalAttrs, {
-          '@_id': cl.id,
-          '@_operator': cl.operator,
-        });
-        const children: OrderedNode[] = [];
-        if (cl.conditions) {
-          for (const cond of cl.conditions) {
-            const built = buildCondition(cond);
-            if (built) children.push(built);
-          }
-        }
-        for (const child of (cl.children || [])) {
-          const built = buildNode(child);
-          if (built) children.push(built);
-        }
-        return createOrderedNode('conditionlogic', attrs, children);
-      }
-      case 'conditional': {
-        const cond = node as FormConditional;
-        const attrs = mergeAttrs(cond._originalAttrs, {
-          '@_id': cond.id,
-        });
-        const children: OrderedNode[] = [];
-        for (const child of (cond.children || [])) {
-          const built = buildNode(child);
-          if (built) children.push(built);
-        }
-        return createOrderedNode('conditional', attrs, children);
-      }
-      case 'includeform': {
-        const inc = node as FormIncludeForm;
-        const attrs = mergeAttrs(inc._originalAttrs, {
-          '@_id': inc.id,
-          '@_formname': inc.formName,
-          '@_title': inc.title,
-          '@_type': inc.type,
-          '@_multipleinclude': boolPlaceholder(inc.multipleInclude),
-          '@_required': boolPlaceholder(inc.required),
-        });
-        return createOrderedNode('includeform', attrs, []);
-      }
-      case 'required-doc': {
-        const doc = node as FormRequiredDocument;
-        const attrs = mergeAttrs(doc._originalAttrs, {
-          '@_id': doc.id,
-          '@_title': doc.title,
-          '@_preventsubmit': boolPlaceholder(doc.preventSubmit),
-        });
-        return createOrderedNode('required-doc', attrs, []);
-      }
-      default:
-        return null;
-    }
-  };
 
   // Build subform
   const subformAttrs = mergeAttrs(form._originalAttrs, {
@@ -1103,10 +881,7 @@ export const buildSubformXML = (form: FormSubform): string => {
   ];
 
   const xmlContent = builder.build(xmlObj);
-  const fixedXml = xmlContent
-    .replace(/__BOOL_TRUE__/g, 'true')
-    .replace(/__BOOL_FALSE__/g, 'false');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${fixedXml}`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${fixBooleanPlaceholders(xmlContent)}`;
 };
 
 // Create empty subform

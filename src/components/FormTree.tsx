@@ -1,6 +1,27 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+  DragOverEvent,
+  UniqueIdentifier,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
 import { FormNode, FormQuestion, FormEntity, FormConditionSet, FormConditionLogic, FormSection, FormSubSection, FormSubform, PROFILE_REFERENCE_FIELDS } from '@/types/form';
@@ -37,11 +58,10 @@ interface ContextMenuState {
   nodeId: string | null;
 }
 
-// Drag state
-interface DragState {
-  draggedNodeId: string | null;
-  dropTargetId: string | null;
-  dropPosition: 'before' | 'after' | 'inside' | null;
+// Drag state for overlay
+interface ActiveDragState {
+  id: string;
+  node: FormNode;
 }
 
 const getNodeIcon = (node: FormNode): React.ReactNode => {
@@ -208,17 +228,27 @@ const canAcceptChild = (parentType: string, childType: string): boolean => {
   return rules[parentType]?.includes(childType) || false;
 };
 
-interface TreeNodeProps {
+interface SortableTreeNodeProps {
   node: FormNode;
   depth: number;
-  dragState: DragState;
-  setDragState: (state: DragState) => void;
   parentId: string | null;
   index: number;
   onContextMenu: (e: React.MouseEvent, nodeId: string) => void;
+  isDragOverlay?: boolean;
+  isOver?: boolean;
+  overPosition?: 'before' | 'after' | 'inside' | null;
 }
 
-const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragState, parentId, index, onContextMenu }) => {
+const SortableTreeNode: React.FC<SortableTreeNodeProps> = ({
+  node,
+  depth,
+  parentId,
+  index,
+  onContextMenu,
+  isDragOverlay = false,
+  isOver = false,
+  overPosition = null,
+}) => {
   const {
     selectedNodeId,
     selectNode,
@@ -227,18 +257,39 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
     deleteNode,
     duplicateNode,
     addSubSection,
-    moveNode,
-    findNodeById,
-    findParentNode,
   } = useFormStore();
 
   const { showConfirm, showPrompt } = useModal();
 
+  const canDrag = node.nodeType !== 'questionnaire' && node.nodeType !== 'subform';
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: node.id,
+    disabled: !canDrag,
+    data: {
+      node,
+      parentId,
+      index,
+      depth,
+    },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes.has(node.id);
   const hasChildren = 'children' in node && Array.isArray(node.children) && node.children.length > 0;
-  const isDragging = dragState.draggedNodeId === node.id;
-  const isDropTarget = dragState.dropTargetId === node.id;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -273,125 +324,18 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
     }
   };
 
-  // Drag handlers
-  const handleDragStart = (e: React.DragEvent) => {
-    if (node.nodeType === 'questionnaire' || node.nodeType === 'subform') {
-      e.preventDefault();
-      return;
-    }
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', node.id);
-    setDragState({ draggedNodeId: node.id, dropTargetId: null, dropPosition: null });
-  };
-
-  const handleDragEnd = () => {
-    setDragState({ draggedNodeId: null, dropTargetId: null, dropPosition: null });
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!dragState.draggedNodeId || dragState.draggedNodeId === node.id) return;
-
-    const draggedNode = findNodeById(dragState.draggedNodeId);
-    if (!draggedNode) return;
-
-    // Calculate drop position based on mouse position
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const height = rect.height;
-
-    let position: 'before' | 'after' | 'inside' | null = null;
-
-    // Check if can accept as child (for 'inside' drop)
-    const canAcceptInside = canAcceptChild(node.nodeType, draggedNode.nodeType);
-
-    // Check if parent can accept this node (for 'before'/'after' drops)
-    const targetParent = parentId ? findNodeById(parentId) : null;
-    const canAcceptSibling = targetParent ? canAcceptChild(targetParent.nodeType, draggedNode.nodeType) : false;
-
-    if (y < height * 0.25 && canAcceptSibling) {
-      position = 'before';
-    } else if (y > height * 0.75 && canAcceptSibling) {
-      position = 'after';
-    } else if (canAcceptInside) {
-      position = 'inside';
-    } else if (y < height * 0.5 && canAcceptSibling) {
-      position = 'before';
-    } else if (canAcceptSibling) {
-      position = 'after';
-    }
-
-    if (position && (dragState.dropTargetId !== node.id || dragState.dropPosition !== position)) {
-      setDragState({ ...dragState, dropTargetId: node.id, dropPosition: position });
-    } else if (!position && dragState.dropTargetId === node.id) {
-      setDragState({ ...dragState, dropTargetId: null, dropPosition: null });
-    }
-  };
-
-  const handleDragLeave = () => {
-    if (dragState.dropTargetId === node.id) {
-      setDragState({ ...dragState, dropTargetId: null, dropPosition: null });
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Capture current drag state before any changes
-    const { draggedNodeId, dropPosition } = dragState;
-
-    // Immediately clear drag state to prevent duplicate processing
-    setDragState({ draggedNodeId: null, dropTargetId: null, dropPosition: null });
-
-    // Validate we have what we need
-    if (!draggedNodeId || !dropPosition) return;
-    if (draggedNodeId === node.id) return;
-
-    const draggedNode = findNodeById(draggedNodeId);
-    if (!draggedNode) return;
-
-    if (dropPosition === 'inside') {
-      // Move inside this node (as first child)
-      if (canAcceptChild(node.nodeType, draggedNode.nodeType)) {
-        moveNode(draggedNodeId, node.id, 0);
-      }
-    } else if (parentId) {
-      // Move before or after this node (sibling position)
-      // First validate that the parent can accept this child type
-      const targetParent = findNodeById(parentId);
-      if (!targetParent || !canAcceptChild(targetParent.nodeType, draggedNode.nodeType)) return;
-
-      let targetIndex = dropPosition === 'before' ? index : index + 1;
-
-      // If moving within the same parent and dragged node comes before target,
-      // we need to adjust the index since removing it will shift indices
-      const draggedParent = findParentNode(draggedNodeId);
-      if (draggedParent && draggedParent.id === parentId && 'children' in draggedParent) {
-        const children = (draggedParent as { children: FormNode[] }).children;
-        const draggedIndex = children.findIndex((c) => c.id === draggedNodeId);
-        if (draggedIndex !== -1 && draggedIndex < index) {
-          targetIndex--;
-        }
-      }
-
-      moveNode(draggedNodeId, parentId, targetIndex);
-    }
-  };
-
   // Don't show certain node types in tree
   if (['description', 'option', 'reference', 'answer'].includes(node.nodeType)) {
     return null;
   }
 
   const badge = getNodeBadge(node);
-  const canDrag = node.nodeType !== 'questionnaire' && node.nodeType !== 'subform';
 
   // Drop indicator styles
   const getDropIndicatorStyle = () => {
-    if (!isDropTarget || !dragState.dropPosition) return '';
+    if (!isOver || !overPosition) return '';
 
-    switch (dragState.dropPosition) {
+    switch (overPosition) {
       case 'before':
         return 'before:absolute before:left-0 before:right-0 before:top-0 before:h-0.5 before:bg-cyan-500';
       case 'after':
@@ -403,27 +347,34 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
     }
   };
 
+  // Filter visible children
+  const visibleChildren = hasChildren
+    ? (node as { children: FormNode[] }).children.filter(
+        (c) => !['description', 'option', 'reference', 'answer'].includes(c.nodeType)
+      )
+    : [];
+
   return (
-    <div>
+    <div ref={!isDragOverlay ? setNodeRef : undefined} style={!isDragOverlay ? style : undefined}>
       <div
         className={`relative flex items-center gap-1 py-1.5 px-2 cursor-pointer rounded-lg group border-l-2 transition-all duration-150 ${
           isSelected
             ? 'bg-cyan-50 border-l-cyan-500 shadow-sm'
             : 'border-l-transparent hover:bg-slate-50'
-        } ${isDragging ? 'opacity-50' : ''} ${getDropIndicatorStyle()}`}
+        } ${isDragging ? 'opacity-50' : ''} ${getDropIndicatorStyle()} ${isDragOverlay ? 'bg-white shadow-lg border border-slate-200' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
         onContextMenu={(e) => onContextMenu(e, node.id)}
-        draggable={canDrag}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         {/* Drag handle */}
         {canDrag && (
-          <GripVertical className="w-3 h-3 text-slate-300 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity" />
+          <button
+            className="w-3 h-3 text-slate-300 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity touch-none"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="w-3 h-3" />
+          </button>
         )}
 
         {/* Expand/collapse toggle */}
@@ -454,7 +405,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
           </span>
           {getReferenceLabel(node) && (
             <span className="block truncate text-[10px] text-indigo-500">
-              → {getReferenceLabel(node)}
+              {getReferenceLabel(node)}
             </span>
           )}
         </div>
@@ -497,35 +448,53 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, depth, dragState, setDragStat
       </div>
 
       {/* Children */}
-      {hasChildren && isExpanded && (
-        <div>
-          {(node as { children: FormNode[] }).children
-            .filter((c) => !['description', 'option', 'reference', 'answer'].includes(c.nodeType))
-            .map((child, idx) => (
-              <TreeNode
-                key={child.id}
-                node={child}
-                depth={depth + 1}
-                dragState={dragState}
-                setDragState={setDragState}
-                parentId={node.id}
-                index={idx}
-                onContextMenu={onContextMenu}
-              />
-            ))}
-        </div>
+      {hasChildren && isExpanded && !isDragOverlay && (
+        <SortableContext
+          items={visibleChildren.map((c) => c.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {visibleChildren.map((child, idx) => (
+            <SortableTreeNode
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              parentId={node.id}
+              index={idx}
+              onContextMenu={onContextMenu}
+            />
+          ))}
+        </SortableContext>
+      )}
+    </div>
+  );
+};
+
+// Drag overlay component (rendered outside sortable context)
+const DragOverlayNode: React.FC<{ node: FormNode; depth: number }> = ({ node, depth }) => {
+  return (
+    <div
+      className="flex items-center gap-1 py-1.5 px-2 rounded-lg bg-white shadow-lg border border-cyan-300"
+      style={{ paddingLeft: `${depth * 16 + 8}px`, minWidth: '200px' }}
+    >
+      <GripVertical className="w-3 h-3 text-cyan-500" />
+      {getNodeIcon(node)}
+      <span className="text-sm text-slate-700 truncate">{getNodeLabel(node)}</span>
+      {getNodeBadge(node) && (
+        <span className={`badge ${getBadgeClass(node.nodeType)}`}>
+          {getNodeBadge(node)}
+        </span>
       )}
     </div>
   );
 };
 
 export const FormTree: React.FC = () => {
-  const { form, copyNode, pasteNode, canPaste, selectNode } = useFormStore();
-  const [dragState, setDragState] = useState<DragState>({
-    draggedNodeId: null,
-    dropTargetId: null,
-    dropPosition: null,
-  });
+  const { form, copyNode, pasteNode, canPaste, selectNode, moveNode, findNodeById, findParentNode, expandedNodes } = useFormStore();
+  const [activeDrag, setActiveDrag] = useState<ActiveDragState | null>(null);
+  const [overInfo, setOverInfo] = useState<{
+    id: string;
+    position: 'before' | 'after' | 'inside';
+  } | null>(null);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     isOpen: false,
@@ -533,6 +502,59 @@ export const FormTree: React.FC = () => {
     y: 0,
     nodeId: null,
   });
+
+  // Configure sensors for different input types
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: (event, { currentCoordinates }) => {
+        // Basic keyboard navigation for drag
+        switch (event.code) {
+          case 'ArrowUp':
+            return { ...currentCoordinates, y: currentCoordinates.y - 25 };
+          case 'ArrowDown':
+            return { ...currentCoordinates, y: currentCoordinates.y + 25 };
+          default:
+            return currentCoordinates;
+        }
+      },
+    })
+  );
+
+  // Collect all sortable IDs from the tree
+  const collectSortableIds = useCallback((node: FormNode): string[] => {
+    const ids: string[] = [];
+
+    // Skip hidden node types
+    if (['description', 'option', 'reference', 'answer'].includes(node.nodeType)) {
+      return ids;
+    }
+
+    ids.push(node.id);
+
+    if ('children' in node && Array.isArray(node.children) && expandedNodes.has(node.id)) {
+      for (const child of node.children) {
+        ids.push(...collectSortableIds(child as FormNode));
+      }
+    }
+
+    return ids;
+  }, [expandedNodes]);
+
+  const sortableIds = useMemo(() => {
+    if (!form) return [];
+    return collectSortableIds(form);
+  }, [form, collectSortableIds]);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -582,47 +604,180 @@ export const FormTree: React.FC = () => {
     setContextMenu({ ...contextMenu, isOpen: false });
   }, [contextMenu, pasteNode]);
 
+  // DnD handlers
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const { active } = event;
+    const node = findNodeById(active.id as string);
+    if (node) {
+      setActiveDrag({ id: active.id as string, node });
+    }
+  }, [findNodeById]);
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      setOverInfo(null);
+      return;
+    }
+
+    const activeNode = findNodeById(active.id as string);
+    const overNode = findNodeById(over.id as string);
+    if (!activeNode || !overNode) {
+      setOverInfo(null);
+      return;
+    }
+
+    // Get collision rect to determine position
+    const overData = event.over?.data.current as { parentId?: string; index?: number } | undefined;
+    const overParentId = overData?.parentId;
+    const overParent = overParentId ? findNodeById(overParentId) : null;
+
+    // Determine drop position based on pointer position
+    const overRect = over.rect;
+    const pointerY = event.activatorEvent instanceof MouseEvent
+      ? event.activatorEvent.clientY
+      : (event.activatorEvent as TouchEvent)?.touches?.[0]?.clientY ?? 0;
+
+    const relativeY = pointerY - overRect.top;
+    const height = overRect.height;
+
+    let position: 'before' | 'after' | 'inside' = 'inside';
+    const canAcceptInside = canAcceptChild(overNode.nodeType, activeNode.nodeType);
+    const canAcceptSibling = overParent ? canAcceptChild(overParent.nodeType, activeNode.nodeType) : false;
+
+    if (relativeY < height * 0.25 && canAcceptSibling) {
+      position = 'before';
+    } else if (relativeY > height * 0.75 && canAcceptSibling) {
+      position = 'after';
+    } else if (canAcceptInside) {
+      position = 'inside';
+    } else if (relativeY < height * 0.5 && canAcceptSibling) {
+      position = 'before';
+    } else if (canAcceptSibling) {
+      position = 'after';
+    } else {
+      setOverInfo(null);
+      return;
+    }
+
+    setOverInfo({ id: over.id as string, position });
+  }, [findNodeById]);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveDrag(null);
+    setOverInfo(null);
+
+    if (!over || active.id === over.id) return;
+
+    const activeNode = findNodeById(active.id as string);
+    const overNode = findNodeById(over.id as string);
+    if (!activeNode || !overNode) return;
+
+    const overData = event.over?.data.current as { parentId?: string; index?: number } | undefined;
+    const overParentId = overData?.parentId;
+    const overIndex = overData?.index ?? 0;
+
+    if (!overInfo) return;
+
+    const { position } = overInfo;
+
+    if (position === 'inside') {
+      // Move as first child of overNode
+      if (canAcceptChild(overNode.nodeType, activeNode.nodeType)) {
+        moveNode(active.id as string, over.id as string, 0);
+      }
+    } else if (overParentId) {
+      // Move as sibling
+      const targetParent = findNodeById(overParentId);
+      if (targetParent && canAcceptChild(targetParent.nodeType, activeNode.nodeType)) {
+        let targetIndex = position === 'before' ? overIndex : overIndex + 1;
+
+        // Adjust index if moving within same parent
+        const activeParent = findParentNode(active.id as string);
+        if (activeParent && activeParent.id === overParentId && 'children' in activeParent) {
+          const children = (activeParent as { children: FormNode[] }).children;
+          const activeIndex = children.findIndex((c) => c.id === active.id);
+          if (activeIndex !== -1 && activeIndex < overIndex) {
+            targetIndex--;
+          }
+        }
+
+        moveNode(active.id as string, overParentId, targetIndex);
+      }
+    }
+  }, [findNodeById, findParentNode, moveNode, overInfo]);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveDrag(null);
+    setOverInfo(null);
+  }, []);
+
   if (!form) return null;
 
   const showPaste = contextMenu.nodeId ? canPaste(contextMenu.nodeId) : false;
 
   return (
-    <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-200 relative">
-      <TreeNode
-        node={form}
-        depth={0}
-        dragState={dragState}
-        setDragState={setDragState}
-        parentId={null}
-        index={0}
-        onContextMenu={handleContextMenu}
-      />
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-200 relative">
+        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+          <SortableTreeNode
+            node={form}
+            depth={0}
+            parentId={null}
+            index={0}
+            onContextMenu={handleContextMenu}
+            isOver={overInfo?.id === form.id}
+            overPosition={overInfo?.id === form.id ? overInfo.position : null}
+          />
+        </SortableContext>
 
-      {/* Context Menu */}
-      {contextMenu.isOpen && (
-        <div
-          className="fixed bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50 min-w-[140px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={handleCopy}
-            className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 flex items-center gap-2"
+        {/* Context Menu */}
+        {contextMenu.isOpen && (
+          <div
+            className="fixed bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50 min-w-[140px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <Copy className="w-4 h-4 text-slate-500" />
-            Copy
-          </button>
-          {showPaste && (
             <button
-              onClick={handlePaste}
+              onClick={handleCopy}
               className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 flex items-center gap-2"
             >
-              <Clipboard className="w-4 h-4 text-slate-500" />
-              Paste
+              <Copy className="w-4 h-4 text-slate-500" />
+              Copy
             </button>
-          )}
-        </div>
-      )}
-    </div>
+            {showPaste && (
+              <button
+                onClick={handlePaste}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 flex items-center gap-2"
+              >
+                <Clipboard className="w-4 h-4 text-slate-500" />
+                Paste
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Drag Overlay - renders the dragged item */}
+      <DragOverlay dropAnimation={{
+        duration: 200,
+        easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+      }}>
+        {activeDrag ? (
+          <DragOverlayNode
+            node={activeDrag.node}
+            depth={0}
+          />
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 };
