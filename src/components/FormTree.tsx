@@ -64,6 +64,11 @@ interface ActiveDragState {
   node: FormNode;
 }
 
+const stripHtml = (html: string): string => {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, '');
+};
+
 const getNodeIcon = (node: FormNode): React.ReactNode => {
   const iconClass = 'w-4 h-4';
 
@@ -136,8 +141,7 @@ const getNodeLabel = (node: FormNode): string => {
       const q = node as FormQuestion;
       const desc = q.children.find((c) => c.nodeType === 'description');
       const text = desc ? (desc as { text: string }).text : '';
-      const truncated = text.length > 50 ? text.substring(0, 50) + '...' : text;
-      return truncated || `[${q.type}]`;
+      return text || `[${q.type}]`;
     }
     case 'entity':
       return (node as FormEntity).title || 'Entity';
@@ -156,7 +160,7 @@ const getNodeLabel = (node: FormNode): string => {
     case 'warning':
     case 'note':
     case 'description':
-      return (node as { text: string }).text?.substring(0, 40) || node.nodeType;
+      return (node as { text: string }).text || node.nodeType;
     case 'includeform':
       return (node as { title: string }).title || 'Include Form';
     case 'required-doc':
@@ -400,15 +404,15 @@ const SortableTreeNode: React.FC<SortableTreeNodeProps> = ({
 
         {/* Label */}
         <div className="flex-1 min-w-0">
-          <span className={`block truncate text-sm ${
+          <span className={`block text-sm leading-snug ${
             node.nodeType === 'question' && (node as FormQuestion).required
               ? 'text-red-600 font-medium'
               : isSelected ? 'text-slate-900 font-medium' : 'text-slate-700'
           }`}>
-            {getNodeLabel(node)}
+            {stripHtml(getNodeLabel(node))}
           </span>
           {getReferenceLabel(node) && (
-            <span className="block truncate text-[10px] text-indigo-500">
+            <span className="block text-[10px] text-indigo-500">
               {getReferenceLabel(node)}
             </span>
           )}
@@ -482,7 +486,7 @@ const DragOverlayNode: React.FC<{ node: FormNode; depth: number }> = ({ node, de
     >
       <GripVertical className="w-3 h-3 text-cyan-500" />
       {getNodeIcon(node)}
-      <span className="text-sm text-slate-700 truncate">{getNodeLabel(node)}</span>
+      <span className="text-sm text-slate-700 truncate">{stripHtml(getNodeLabel(node))}</span>
       {getNodeBadge(node) && (
         <span className={`badge ${getBadgeClass(node.nodeType)}`}>
           {getNodeBadge(node)}
