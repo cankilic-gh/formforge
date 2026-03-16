@@ -36,6 +36,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
     }
   }, [onChange]);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  }, []);
+
   const exec = useCallback((command: string) => {
     document.execCommand(command, false);
     editorRef.current?.focus();
@@ -200,8 +206,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
         contentEditable
         suppressContentEditableWarning
         onInput={handleInput}
+        onPaste={handlePaste}
         data-placeholder={placeholder}
-        className="w-full min-h-[5rem] border border-slate-200 rounded-b-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400"
+        className="w-full min-h-[5rem] border border-slate-200 rounded-b-lg px-3 py-2 text-sm text-slate-800 break-words whitespace-pre-wrap overflow-hidden focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400"
+        style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
       />
     </div>
   );
