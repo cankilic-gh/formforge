@@ -324,8 +324,8 @@ const SortableTreeNode: React.FC<SortableTreeNodeProps> = ({
     }
   };
 
-  // Don't show certain node types in tree
-  if (['description', 'option', 'reference', 'answer'].includes(node.nodeType)) {
+  // Don't show certain node types in tree (description is only hidden inside questions)
+  if (['option', 'reference', 'answer'].includes(node.nodeType)) {
     return null;
   }
 
@@ -347,10 +347,14 @@ const SortableTreeNode: React.FC<SortableTreeNodeProps> = ({
     }
   };
 
-  // Filter visible children
+  // Filter visible children (hide description only inside questions, always hide option/reference/answer)
   const visibleChildren = hasChildren
     ? (node as { children: FormNode[] }).children.filter(
-        (c) => !['description', 'option', 'reference', 'answer'].includes(c.nodeType)
+        (c) => {
+          if (['option', 'reference', 'answer'].includes(c.nodeType)) return false;
+          if (c.nodeType === 'description' && node.nodeType === 'question') return false;
+          return true;
+        }
       )
     : [];
 
@@ -536,7 +540,7 @@ export const FormTree: React.FC = () => {
     const ids: string[] = [];
 
     // Skip hidden node types
-    if (['description', 'option', 'reference', 'answer'].includes(node.nodeType)) {
+    if (['option', 'reference', 'answer'].includes(node.nodeType)) {
       return ids;
     }
 
