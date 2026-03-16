@@ -26,6 +26,10 @@ import {
 } from 'lucide-react';
 import { useRef, useState, useEffect } from 'react';
 
+// Module-level storage to survive component remounts
+let persistedFileHandle: FileSystemFileHandle | null = null;
+let persistedFileName: string | null = null;
+
 interface ToolbarProps {
   onGenerateClick?: () => void;
 }
@@ -48,7 +52,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   const { showAlert, showConfirm, showPrompt } = useModal();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
   const [savedHistoryIndex, setSavedHistoryIndex] = useState(-1);
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
   const [xmlContent, setXmlContent] = useState('');
@@ -109,7 +112,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     const suffix = await showPrompt('Form Suffix', 'Enter form suffix (5 digits):', '00001');
     if (!suffix) return;
 
-    fileHandleRef.current = null;
+    persistedFileHandle = null;
+    persistedFileName = null;
     setSavedHistoryIndex(-1);
     setForm(isSubform ? createEmptySubform(title, suffix) : createEmptyForm(title, suffix));
   };
@@ -143,7 +147,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
         const parsed = parseAnyXML(xml);
         if (parsed) {
-          fileHandleRef.current = handle;
+          persistedFileHandle = handle;
+          persistedFileName = file.name;
           setForm(parsed);
           setSavedHistoryIndex(0);
         } else {
@@ -176,7 +181,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
       const parsed = parseAnyXML(xml);
       if (parsed) {
-        fileHandleRef.current = null; // No handle for legacy file input
+        persistedFileHandle = null; // No handle for legacy file input
+        persistedFileName = file.name;
         setForm(parsed);
         setSavedHistoryIndex(0);
       } else {
@@ -200,9 +206,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     const xml = buildAnyXML(form);
 
     // If we have an existing file handle, save directly to it
-    if (fileHandleRef.current) {
+    if (persistedFileHandle) {
       try {
-        const writable = await fileHandleRef.current.createWritable();
+        const writable = await persistedFileHandle.createWritable();
         await writable.write(xml);
         await writable.close();
         setSavedHistoryIndex(historyIndex);
@@ -210,6 +216,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       } catch (err) {
         // Handle might be invalid, fall through to Save As
         console.error('Failed to save to existing file:', err);
+        persistedFileHandle = null;
       }
     }
 
@@ -220,7 +227,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   const handleSaveAs = async () => {
     if (!form) return;
     const xml = buildAnyXML(form);
-    const defaultName = `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
+    const defaultName = persistedFileName || `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
 
     // Use File System Access API if available
     if ('showSaveFilePicker' in window) {
@@ -235,7 +242,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         const writable = await handle.createWritable();
         await writable.write(xml);
         await writable.close();
-        fileHandleRef.current = handle;
+        persistedFileHandle = handle;
+        persistedFileName = handle.name;
         setSavedHistoryIndex(historyIndex);
         return;
       } catch (err) {
@@ -264,7 +272,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       }
     }
 
-    fileHandleRef.current = null;
+    persistedFileHandle = null;
+    persistedFileName = null;
     setSavedHistoryIndex(-1);
     setForm(null);
   };
