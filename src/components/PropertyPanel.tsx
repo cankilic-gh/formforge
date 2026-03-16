@@ -13,6 +13,8 @@ import {
   FormSubform,
   FormOption,
   FormDescription,
+  FormWarning,
+  FormNote,
   FormIncludeForm,
   FormRequiredDocument,
   QUESTION_TYPE_META,
@@ -21,6 +23,7 @@ import {
   QuestionType,
 } from '@/types/form';
 import { Plus, Trash2, GripVertical } from 'lucide-react';
+import { RichTextEditor } from './RichTextEditor';
 
 export const PropertyPanel: React.FC = () => {
   const { selectedNodeId, findNodeById } = useFormStore();
@@ -53,6 +56,9 @@ export const PropertyPanel: React.FC = () => {
       {node.nodeType === 'conditionset' && <ConditionSetProps node={node as FormConditionSet} />}
       {node.nodeType === 'conditionlogic' && <ConditionLogicProps node={node as FormConditionLogic} />}
       {node.nodeType === 'conditional' && <ConditionalProps node={node as FormConditional} />}
+      {node.nodeType === 'description' && <DescriptionProps node={node as FormDescription} />}
+      {node.nodeType === 'warning' && <WarningProps node={node as FormWarning} />}
+      {node.nodeType === 'note' && <NoteProps node={node as FormNote} />}
       {node.nodeType === 'includeform' && <IncludeFormProps node={node as FormIncludeForm} />}
       {node.nodeType === 'required-doc' && <RequiredDocProps node={node as FormRequiredDocument} />}
     </div>
@@ -246,10 +252,9 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
 
       {/* Description */}
       <Field label="Question Text">
-        <textarea
+        <RichTextEditor
           value={description?.text || ''}
-          onChange={(e) => updateDescription(e.target.value)}
-          className="w-full h-20 resize-none"
+          onChange={(html) => updateDescription(html)}
           placeholder="Enter question text..."
         />
       </Field>
@@ -451,6 +456,72 @@ const QuestionProps: React.FC<{ node: FormQuestion }> = ({ node }) => {
           </Field>
         </div>
       </details>
+    </div>
+  );
+};
+
+// Description Properties (standalone)
+const DescriptionProps: React.FC<{ node: FormDescription }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Prefix">
+        <input
+          type="text"
+          value={node.prefix || ''}
+          onChange={(e) => updateNode(node.id, { prefix: e.target.value })}
+          className="w-full"
+          placeholder="e.g., 1. or a)"
+        />
+      </Field>
+      <Field label="Text">
+        <RichTextEditor
+          value={node.text || ''}
+          onChange={(html) => updateNode(node.id, { text: html })}
+          placeholder="Enter description text..."
+        />
+      </Field>
+    </div>
+  );
+};
+
+// Warning Properties
+const WarningProps: React.FC<{ node: FormWarning }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Text">
+        <RichTextEditor
+          value={node.text || ''}
+          onChange={(html) => updateNode(node.id, { text: html })}
+          placeholder="Enter warning text..."
+        />
+      </Field>
+    </div>
+  );
+};
+
+// Note Properties
+const NoteProps: React.FC<{ node: FormNote }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Text">
+        <RichTextEditor
+          value={node.text || ''}
+          onChange={(html) => updateNode(node.id, { text: html })}
+          placeholder="Enter note text..."
+        />
+      </Field>
+      <Field label="Is Check Item">
+        <ToggleSwitch
+          checked={node.isCheckItem ?? false}
+          onChange={(checked) => updateNode(node.id, { isCheckItem: checked })}
+        />
+      </Field>
     </div>
   );
 };
