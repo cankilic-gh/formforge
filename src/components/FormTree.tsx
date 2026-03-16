@@ -636,11 +636,12 @@ export const FormTree: React.FC = () => {
     const overParentId = overData?.parentId;
     const overParent = overParentId ? findNodeById(overParentId) : null;
 
-    // Determine drop position based on pointer position
+    // Determine drop position based on current pointer position
     const overRect = over.rect;
-    const pointerY = event.activatorEvent instanceof MouseEvent
+    const initialY = event.activatorEvent instanceof MouseEvent
       ? event.activatorEvent.clientY
       : (event.activatorEvent as TouchEvent)?.touches?.[0]?.clientY ?? 0;
+    const pointerY = initialY + (event.delta?.y ?? 0);
 
     const relativeY = pointerY - overRect.top;
     const height = overRect.height;
