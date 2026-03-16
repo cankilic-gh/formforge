@@ -262,6 +262,7 @@ let parseEntity: (attrs: Record<string, unknown>, children: OrderedNode[]) => Fo
 parseConditional = (attrs: Record<string, unknown>, children: OrderedNode[]): FormConditional => ({
   id: String(attrs['@_id'] || generateId()),
   nodeType: 'conditional',
+  condition: attrs['@_condition'] ? String(attrs['@_condition']) : 'true',
   children: parseChildren(children),
   _originalAttrs: extractOriginalAttrs(attrs),
 });
@@ -707,6 +708,7 @@ const buildNode = (node: FormNode): OrderedNode | null => {
       const cond = node as FormConditional;
       const attrs = mergeAttrs(cond._originalAttrs, {
         '@_id': cond.id,
+        '@_condition': cond.condition || 'true',
       });
       const children: OrderedNode[] = [];
       for (const child of (cond.children || [])) {
