@@ -222,6 +222,10 @@ export const useFormStore = create<FormState>()(
         const option2Id = generateId();
         const conditionalId = generateId();
         const conditionSetId = generateId();
+        const sampleQuestionId = generateId();
+        const sampleDescId = generateId();
+        const sampleOption1Id = generateId();
+        const sampleOption2Id = generateId();
 
         return {
           id: conditionSetId,
@@ -233,7 +237,7 @@ export const useFormStore = create<FormState>()(
               nodeType: 'question',
               type: 'radio',
               format: '',
-              required: false,
+              required: true,
               triggerValue: 'yes',
               comment: '',
               maxlength: 0,
@@ -256,7 +260,32 @@ export const useFormStore = create<FormState>()(
               id: conditionalId,
               nodeType: 'conditional',
               condition: 'true',
-              children: [],
+              children: [
+                {
+                  id: sampleQuestionId,
+                  nodeType: 'question',
+                  type: 'radio',
+                  format: '',
+                  required: false,
+                  triggerValue: '',
+                  comment: '',
+                  maxlength: 0,
+                  refname: '',
+                  appType: '',
+                  appTypeTrigger: '',
+                  isAmended: false,
+                  validatorClass: '',
+                  validationMessage: '',
+                  ncbeName: '',
+                  ncbeCurrently: false,
+                  ilgName: '',
+                  children: [
+                    { id: sampleDescId, nodeType: 'description', prefix: '', text: 'Sample Question' },
+                    { id: sampleOption1Id, nodeType: 'option', value: 'yes', text: 'Yes' },
+                    { id: sampleOption2Id, nodeType: 'option', value: 'no', text: 'No' },
+                  ],
+                } as FormQuestion,
+              ],
             },
           ],
         };
