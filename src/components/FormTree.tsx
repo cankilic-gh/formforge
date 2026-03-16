@@ -730,6 +730,7 @@ export const FormTree: React.FC = () => {
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
+      autoScroll={{ threshold: { x: 0, y: 0.15 }, interval: 10, acceleration: 5 }}
     >
       <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-200 relative">
         <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
