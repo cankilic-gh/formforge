@@ -46,10 +46,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
     }
   }, [value]);
 
-  // Sync code view textarea when switching
+  // Sync code view textarea when switching and auto-size
   useEffect(() => {
     if (codeView && codeRef.current) {
       codeRef.current.value = value;
+      codeRef.current.style.height = 'auto';
+      codeRef.current.style.height = codeRef.current.scrollHeight + 'px';
     }
   }, [codeView, value]);
 
@@ -217,8 +219,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
         <textarea
           ref={codeRef}
           defaultValue={value}
-          onChange={handleCodeChange}
-          className="w-full min-h-[8rem] border border-slate-200 rounded-b-lg px-3 py-2 text-xs font-mono text-slate-700 bg-slate-50 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500"
+          onChange={(e) => { handleCodeChange(e); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+          onFocus={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+          className="w-full min-h-[5rem] border border-slate-200 rounded-b-lg px-3 py-2 text-xs font-mono text-slate-700 bg-slate-50 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500"
+          style={{ fieldSizing: 'content' } as React.CSSProperties}
           spellCheck={false}
         />
       )}
