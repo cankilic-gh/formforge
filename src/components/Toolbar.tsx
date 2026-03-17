@@ -30,6 +30,30 @@ import { useRef, useState, useEffect } from 'react';
 let persistedFileHandle: FileSystemFileHandle | null = null;
 let persistedFileName: string | null = null;
 
+// Florida (ET) timestamp component
+const LastUpdated: React.FC = () => {
+  const { form } = useFormStore();
+  const [time, setTime] = useState('');
+
+  useEffect(() => {
+    if (!form) { setTime(''); return; }
+    const update = () => {
+      setTime(new Date().toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+        hour12: true,
+      }));
+    };
+    update();
+    const interval = setInterval(update, 60000);
+    return () => clearInterval(interval);
+  }, [form]);
+
+  if (!time) return null;
+  return <span className="text-[9px] text-slate-400 leading-none mt-0.5">{time} ET</span>;
+};
+
 interface ToolbarProps {
   onGenerateClick?: () => void;
 }
@@ -350,7 +374,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         {/* Logo - matches sidebar width (w-56 = 224px) */}
         <div className="w-56 flex items-center gap-2 px-3 border-r border-slate-200">
           <Hammer className="w-5 h-5 text-cyan-600" />
-          <span className="font-bold text-slate-800 text-sm tracking-wide">FormForge</span>
+          <div className="flex flex-col">
+            <span className="font-bold text-slate-800 text-sm tracking-wide leading-none">FormForge</span>
+            <LastUpdated />
+          </div>
         </div>
 
         {/* File Management */}
