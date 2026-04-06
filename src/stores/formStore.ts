@@ -1195,8 +1195,8 @@ export const useFormStore = create<FormState>()(
         expandedNodes: Array.from(state.expandedNodes),
       } as unknown as FormState),
       merge: (persisted, current) => ({
-        ...current,
         ...(persisted as Partial<FormState>),
+        ...current,
         expandedNodes: new Set((persisted as { expandedNodes?: string[] })?.expandedNodes || []),
       }),
     }
