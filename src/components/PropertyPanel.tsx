@@ -66,7 +66,7 @@ export const PropertyPanel: React.FC = () => {
 };
 
 // Questionnaire Properties
-const QuestionnaireProps: React.FC<{ node: FormNode & { title: string; suffix?: string } }> = ({ node }) => {
+const QuestionnaireProps: React.FC<{ node: FormNode & { title: string; suffix?: string; nextId?: number } }> = ({ node }) => {
   const { updateNode } = useFormStore();
 
   return (
@@ -84,6 +84,15 @@ const QuestionnaireProps: React.FC<{ node: FormNode & { title: string; suffix?: 
           type="text"
           value={node.suffix || ''}
           onChange={(e) => updateNode(node.id, { suffix: e.target.value })}
+          className="w-full"
+        />
+      </Field>
+      <Field label="Next ID">
+        <input
+          type="number"
+          min={1}
+          value={node.nextId ?? ''}
+          onChange={(e) => updateNode(node.id, { nextId: parseInt(e.target.value, 10) || 1 })}
           className="w-full"
         />
       </Field>
@@ -110,6 +119,15 @@ const SubformProps: React.FC<{ node: FormSubform }> = ({ node }) => {
           type="text"
           value={node.suffix || ''}
           onChange={(e) => updateNode(node.id, { suffix: e.target.value })}
+          className="w-full"
+        />
+      </Field>
+      <Field label="Next ID">
+        <input
+          type="number"
+          min={1}
+          value={node.nextId ?? ''}
+          onChange={(e) => updateNode(node.id, { nextId: parseInt(e.target.value, 10) || 1 })}
           className="w-full"
         />
       </Field>

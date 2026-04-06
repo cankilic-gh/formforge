@@ -136,13 +136,23 @@ export const useFormStore = create<FormState>()(
     (set, get) => {
       // ID generator that uses form's suffix and nextId
       // Format: nextId + suffix (e.g., nextId=2, suffix=00001 -> 200001)
+      // Ensures uniqueness by checking against all existing IDs
       const generateId = (): string => {
         const form = get().form;
         if (form) {
-          const id = `${form.nextId}${form.suffix}`;
-          // Update nextId in form
+          const existingIds = new Set(collectNodeIds(form));
+          let currentNextId = form.nextId;
+
+          // Skip any nextId values that would produce an already-existing ID
+          let id = `${currentNextId}${form.suffix}`;
+          while (existingIds.has(id)) {
+            currentNextId++;
+            id = `${currentNextId}${form.suffix}`;
+          }
+
+          // Update nextId in form (set to currentNextId + 1)
           set((state) => ({
-            form: state.form ? { ...state.form, nextId: state.form.nextId + 1 } : null,
+            form: state.form ? { ...state.form, nextId: currentNextId + 1 } : null,
           }));
           return id;
         }
