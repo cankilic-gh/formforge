@@ -42,8 +42,9 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
         <h2 className="text-2xl font-bold text-white mb-6 text-center">Access Required</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-400 mb-2">Username</label>
+            <label htmlFor="auth-username" className="block text-sm text-slate-400 mb-2">Username</label>
             <input
+              id="auth-username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -52,8 +53,9 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-400 mb-2">Password</label>
+            <label htmlFor="auth-password" className="block text-sm text-slate-400 mb-2">Password</label>
             <input
+              id="auth-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
