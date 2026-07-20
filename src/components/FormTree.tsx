@@ -167,6 +167,9 @@ const getNodeIcon = (node: FormNode): React.ReactNode => {
     case 'warning': return <AlertCircle className={`${iconClass} text-red-600`} />;
     case 'note':
     case 'description': return <Info className={`${iconClass} text-slate-500`} />;
+    case 'simpletext': return <Type className={`${iconClass} text-slate-600`} />;
+    case 'validator': return <CheckCircle2 className={`${iconClass} text-emerald-600`} />;
+    case 'unknown': return <FileText className={`${iconClass} text-rose-400`} />;
     case 'includeform': return <FileInput className={`${iconClass} text-indigo-600`} />;
     case 'required-doc': return <FileCheck className={`${iconClass} text-orange-600`} />;
     default: return <FileText className={`${iconClass} text-slate-500`} />;
@@ -190,7 +193,13 @@ const getNodeLabel = (node: FormNode): string => {
     case 'conditional': return `If ${(node as { condition: string }).condition}`;
     case 'warning':
     case 'note':
-    case 'description': return (node as { text: string }).text || node.nodeType;
+    case 'description':
+    case 'simpletext': return (node as { text: string }).text || node.nodeType;
+    case 'validator': {
+      const cls = (node as { validatorClass: string }).validatorClass || 'Validator';
+      return `Validator: ${cls.split('.').pop()}`;
+    }
+    case 'unknown': return `<${(node as { tagName: string }).tagName}> (preserved)`;
     case 'includeform': return (node as { title: string }).title || 'Include Form';
     case 'required-doc': return (node as { title: string }).title || 'Required Document';
     default: return node.nodeType;

@@ -23,6 +23,7 @@ import {
   Wand2,
   Code,
   Check,
+  FlaskConical,
 } from 'lucide-react';
 import { useRef, useState, useEffect } from 'react';
 
@@ -315,10 +316,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   const handleCopy = () => {
     if (!selectedNodeId) return;
-    const node = findNodeById(selectedNodeId);
-    if (node) {
-      localStorage.setItem('formforge-clipboard', JSON.stringify(node));
-    }
+    // use the store's copyNode so the clipboard format matches pasteNode/canPaste
+    useFormStore.getState().copyNode(selectedNodeId);
   };
 
   const handlePaste = async () => {
@@ -432,6 +431,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
             label="XML"
             onClick={handleShowXml}
             disabled={!form}
+          />
+          <ToolbarButton
+            icon={FlaskConical}
+            label="Test Lab"
+            onClick={() => { window.location.href = '/test'; }}
           />
         </ToolbarGroup>
 

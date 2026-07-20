@@ -47,6 +47,8 @@ export const Sidebar: React.FC = () => {
     addDescription,
     addWarning,
     addNote,
+    addSimpleText,
+    addValidator,
     addIncludeForm,
     addRequiredDoc,
     addAddressSet,
@@ -123,6 +125,22 @@ export const Sidebar: React.FC = () => {
     if (!selectedNodeId || !canAddToSelected) return;
     const text = await showPrompt('New Warning', 'Enter warning text:', '');
     if (text) addWarning(selectedNodeId, text);
+  };
+
+  const handleAddSimpleText = async () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    const text = await showPrompt('New Simple Text', 'Enter raw HTML fragment (rendered verbatim by E-Bar):', '');
+    if (text) addSimpleText(selectedNodeId, text);
+  };
+
+  const handleAddValidator = async () => {
+    if (!selectedNodeId || !canAddToSelected) return;
+    const validatorClass = await showPrompt(
+      'New Validator',
+      'Fully-qualified validator class (e.g. ilg.ebar.forms.validators.EmpDateGapValidator):',
+      'ilg.ebar.forms.validators.'
+    );
+    if (validatorClass) addValidator(selectedNodeId, validatorClass);
   };
 
   const handleAddNote = async () => {
@@ -237,7 +255,7 @@ export const Sidebar: React.FC = () => {
       label: 'Simple Text',
       icon: Type,
       color: 'text-slate-600',
-      action: handleAddDescription,
+      action: handleAddSimpleText,
       disabled: !canAddToSelected,
     },
     {
@@ -258,11 +276,11 @@ export const Sidebar: React.FC = () => {
     },
     {
       id: 'validation',
-      label: 'Validation',
+      label: 'Validator',
       icon: CheckSquare,
       color: 'text-emerald-600',
-      action: () => {},
-      disabled: selectedNodeType !== 'questionnaire',
+      action: handleAddValidator,
+      disabled: !canAddToSelected,
     },
     {
       id: 'includeform',

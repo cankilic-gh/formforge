@@ -17,20 +17,26 @@ import {
   FormReference,
   FormIncludeForm,
   FormRequiredDocument,
+  FormSimpleText,
+  FormValidator,
+  FormAnswer,
+  FormUnknown,
   FormNode,
   FormRoot,
   QuestionType,
   ConditionOperator,
 } from '@/types/form';
 
-// Parser options with preserveOrder to maintain element sequence
+// Parser options with preserveOrder to maintain element sequence.
+// trimValues MUST stay false: descriptions can contain raw inline HTML
+// ("Hello <strong>world</strong>") where inter-element whitespace is meaningful.
 const parserOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
   cdataPropName: '#cdata',
   parseAttributeValue: false,
-  trimValues: true,
+  trimValues: false,
   preserveOrder: true,
 };
 
@@ -57,6 +63,12 @@ const generateId = (): string => {
 type OrderedNode = {
   ':@'?: Record<string, unknown>;
   [key: string]: unknown;
+};
+
+// parseInt that does not fall into the ||-falsy trap (nextorder="0" must stay 0)
+const parseIntOr = (value: unknown, fallback: number): number => {
+  const n = parseInt(String(value ?? ''), 10);
+  return Number.isNaN(n) ? fallback : n;
 };
 
 // Get attributes from ordered node
@@ -88,19 +100,47 @@ const extractText = (value: unknown): string => {
   return '';
 };
 
-// Get text content from ordered node array
+// Builder used to reconstruct raw inline XML (no re-formatting)
+const innerXmlBuilder = () => new XMLBuilder({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  textNodeName: '#text',
+  cdataPropName: '#cdata',
+  format: false,
+  suppressEmptyNode: false,
+  preserveOrder: true,
+});
+
+// True when the ordered children contain real element nodes (mixed content)
+const hasElementChildren = (children: OrderedNode[]): boolean => {
+  if (!children || !Array.isArray(children)) return false;
+  return children.some(child => getTagName(child) !== null);
+};
+
+// Get text content from ordered node array.
+// Pure text/CDATA content is concatenated; mixed content (raw inline HTML like
+// "Hello <strong>world</strong>") is reconstructed verbatim so no markup is lost.
 const getTextFromOrdered = (children: OrderedNode[]): string => {
   if (!children || !Array.isArray(children)) return '';
 
+  if (hasElementChildren(children)) {
+    return innerXmlBuilder().build(children).trim();
+  }
+
   const texts: string[] = [];
+  let hasCdata = false;
   for (const child of children) {
     if ('#cdata' in child) {
+      hasCdata = true;
       texts.push(extractText(child['#cdata']));
     } else if ('#text' in child) {
-      texts.push(extractText(child['#text']));
+      const t = extractText(child['#text']);
+      // skip pure indentation around CDATA blocks
+      if (t.trim() !== '') texts.push(t);
     }
   }
-  return texts.filter(Boolean).join('');
+  const joined = texts.join('');
+  return hasCdata ? joined : joined.trim();
 };
 
 // Extract original attributes
@@ -110,7 +150,8 @@ const extractOriginalAttrs = (attrs: Record<string, unknown>): Record<string, st
     if (key.startsWith('@_')) {
       const attrName = key.replace('@_', '');
       const value = attrs[key];
-      if (value !== undefined && value !== null && value !== '') {
+      // empty strings are kept: the real corpus is full of attrs like ncbe_name=""
+      if (value !== undefined && value !== null) {
         if (value === true) {
           result[attrName] = 'true';
         } else if (value === false) {
@@ -148,6 +189,7 @@ const parseWarning = (attrs: Record<string, unknown>, children: OrderedNode[]): 
   id: String(attrs['@_id'] || generateId()),
   nodeType: 'warning',
   text: getTextFromOrdered(children),
+  preventSubmit: attrs['@_preventsubmit'] === 'true',
   _originalAttrs: extractOriginalAttrs(attrs),
 });
 
@@ -157,6 +199,40 @@ const parseNote = (attrs: Record<string, unknown>, children: OrderedNode[]): For
   nodeType: 'note',
   text: getTextFromOrdered(children),
   isCheckItem: attrs['@_ischeckitem'] === 'true',
+  prefix: String(attrs['@_prefix'] || ''),
+  _originalAttrs: extractOriginalAttrs(attrs),
+});
+
+// Parse SimpleText - bare HTML fragment, E-Bar reads only id + text content
+const parseSimpleText = (attrs: Record<string, unknown>, children: OrderedNode[]): FormSimpleText => ({
+  id: String(attrs['@_id'] || generateId()),
+  nodeType: 'simpletext',
+  text: getTextFromOrdered(children),
+  _originalAttrs: extractOriginalAttrs(attrs),
+});
+
+// Parse Validator - standalone validator element
+const parseValidator = (attrs: Record<string, unknown>): FormValidator => ({
+  id: String(attrs['@_id'] || generateId()),
+  nodeType: 'validator',
+  validatorClass: String(attrs['@_validatorclass'] || ''),
+  _originalAttrs: extractOriginalAttrs(attrs),
+});
+
+// Parse Answer - applicant answer (present in saved user files)
+const parseAnswer = (attrs: Record<string, unknown>, children: OrderedNode[]): FormAnswer => ({
+  id: String(attrs['@_id'] || generateId()),
+  nodeType: 'answer',
+  text: getTextFromOrdered(children),
+  _originalAttrs: extractOriginalAttrs(attrs),
+});
+
+// Parse Unknown - preserve the raw subtree verbatim so nothing is silently lost
+const parseUnknown = (tagName: string, attrs: Record<string, unknown>, child: OrderedNode): FormUnknown => ({
+  id: String(attrs['@_id'] || generateId()),
+  nodeType: 'unknown',
+  tagName,
+  raw: structuredClone(child),
   _originalAttrs: extractOriginalAttrs(attrs),
 });
 
@@ -169,12 +245,12 @@ const parseOption = (attrs: Record<string, unknown>, children: OrderedNode[]): F
   _originalAttrs: extractOriginalAttrs(attrs),
 });
 
-// Parse Reference
+// Parse Reference (no default for field - E-Bar reads it verbatim)
 const parseReference = (attrs: Record<string, unknown>): FormReference => ({
   id: String(attrs['@_id'] || generateId()),
   nodeType: 'reference',
   table: String(attrs['@_table'] || ''),
-  field: (attrs['@_field'] || 'fullname') as FormReference['field'],
+  field: String(attrs['@_field'] ?? '') as FormReference['field'],
   _originalAttrs: extractOriginalAttrs(attrs),
 });
 
@@ -187,12 +263,12 @@ const parseQuestion = (attrs: Record<string, unknown>, children: OrderedNode[]):
     const childAttrs = getAttrs(child);
     const tagName = getTagName(child);
 
-    if (tagName === 'description') {
-      questionChildren.push(parseDescription(childAttrs, child[tagName] as OrderedNode[]));
-    } else if (tagName === 'option') {
-      questionChildren.push(parseOption(childAttrs, child[tagName] as OrderedNode[]));
-    } else if (tagName === 'reference') {
+    if (!tagName) continue;
+    if (tagName === 'reference') {
       questionChildren.push(parseReference(childAttrs));
+    } else {
+      const parsed = parseSingleChild(child);
+      if (parsed) questionChildren.push(parsed as FormQuestion['children'][number]);
     }
   }
 
@@ -220,15 +296,17 @@ const parseQuestion = (attrs: Record<string, unknown>, children: OrderedNode[]):
   };
 };
 
-// Parse IncludeForm
-const parseIncludeForm = (attrs: Record<string, unknown>): FormIncludeForm => ({
+// Parse IncludeForm (children carry grafted subform instances in saved user files)
+// NOTE: E-Bar's IncludeForm defaults required to TRUE - only required="false" disables it
+const parseIncludeForm = (attrs: Record<string, unknown>, children: OrderedNode[] = []): FormIncludeForm => ({
   id: String(attrs['@_id'] || generateId()),
   nodeType: 'includeform',
   formName: String(attrs['@_formname'] || ''),
   title: String(attrs['@_title'] || ''),
   type: String(attrs['@_type'] || 'online'),
   multipleInclude: attrs['@_multipleinclude'] === 'true',
-  required: attrs['@_required'] === 'true',
+  required: attrs['@_required'] !== 'false',
+  children: parseChildren(children),
   _originalAttrs: extractOriginalAttrs(attrs),
 });
 
@@ -275,17 +353,9 @@ parseConditionSet = (attrs: Record<string, unknown>, children: OrderedNode[]): F
     const childAttrs = getAttrs(child);
     const tagName = getTagName(child);
 
-    if (tagName === 'question') {
-      csChildren.push(parseQuestion(childAttrs, child[tagName] as OrderedNode[]));
-    } else if (tagName === 'conditional') {
-      csChildren.push(parseConditional(childAttrs, child[tagName] as OrderedNode[]));
-    } else if (tagName === 'description') {
-      csChildren.push(parseDescription(childAttrs, child[tagName] as OrderedNode[]));
-    } else if (tagName === 'warning') {
-      csChildren.push(parseWarning(childAttrs, child[tagName] as OrderedNode[]));
-    } else if (tagName === 'note') {
-      csChildren.push(parseNote(childAttrs, child[tagName] as OrderedNode[]));
-    }
+    if (!tagName) continue;
+    const parsed = parseSingleChild(child);
+    if (parsed) csChildren.push(parsed);
   }
 
   return {
@@ -331,9 +401,11 @@ parseEntity = (attrs: Record<string, unknown>, children: OrderedNode[]): FormEnt
   nodeType: 'entity',
   title: String(attrs['@_title'] || ''),
   type: (attrs['@_type'] || 'single') as 'single' | 'addmore',
-  min: parseInt(String(attrs['@_min'] || '0'), 10) || 0,
-  max: parseInt(String(attrs['@_max'] || '0'), 10) || 0,
-  nextOrder: parseInt(String(attrs['@_nextorder'] || '1'), 10) || 1,
+  min: parseIntOr(attrs['@_min'], 0),
+  max: parseIntOr(attrs['@_max'], 0),
+  entityOrder: parseIntOr(attrs['@_order'], 0),
+  nextOrder: parseIntOr(attrs['@_nextorder'], 1),
+  showInBarAdmin: attrs['@_showinbaradmin'] === undefined ? undefined : attrs['@_showinbaradmin'] === 'true',
   isAmended: attrs['@_isamended'] === 'true',
   groupType: String(attrs['@_grouptype'] || ''),
   ncbeName: String(attrs['@_ncbe_name'] || ''),
@@ -353,7 +425,19 @@ const parseSingleChild = (child: OrderedNode): FormNode | null => {
 
   const childContent = child[tagName] as OrderedNode[];
 
+  // Text-bearing elements that contain REAL child elements (e.g. a description
+  // wrapping a simpletext with its own CDATA) cannot be flattened to text without
+  // corrupting nested CDATA - preserve the whole subtree verbatim instead.
+  const TEXT_BEARING = ['description', 'warning', 'note', 'simpletext', 'option', 'answer'];
+  if (TEXT_BEARING.includes(tagName) && hasElementChildren(childContent)) {
+    return parseUnknown(tagName, childAttrs, child);
+  }
+
   switch (tagName) {
+    case 'section':
+      return parseSection(childAttrs, childContent);
+    case 'subsection':
+      return parseSubSection(childAttrs, childContent);
     case 'question':
       return parseQuestion(childAttrs, childContent);
     case 'entity':
@@ -370,12 +454,23 @@ const parseSingleChild = (child: OrderedNode): FormNode | null => {
       return parseWarning(childAttrs, childContent);
     case 'note':
       return parseNote(childAttrs, childContent);
+    case 'option':
+      return parseOption(childAttrs, childContent);
+    case 'reference':
+      return parseReference(childAttrs);
+    case 'simpletext':
+      return parseSimpleText(childAttrs, childContent);
+    case 'validator':
+      return parseValidator(childAttrs);
+    case 'answer':
+      return parseAnswer(childAttrs, childContent);
     case 'includeform':
-      return parseIncludeForm(childAttrs);
+      return parseIncludeForm(childAttrs, childContent);
     case 'required-doc':
       return parseRequiredDoc(childAttrs);
     default:
-      return null;
+      // Never silently drop: preserve the raw subtree and re-emit it verbatim
+      return parseUnknown(tagName, childAttrs, child);
   }
 };
 
@@ -396,31 +491,22 @@ const parseSubSection = (attrs: Record<string, unknown>, children: OrderedNode[]
   id: String(attrs['@_id'] || generateId()),
   nodeType: 'subsection',
   title: String(attrs['@_title'] || ''),
+  showInBarAdmin: attrs['@_showinbaradmin'] === undefined ? undefined : attrs['@_showinbaradmin'] === 'true',
+  depends: attrs['@_depends'] === undefined ? undefined : String(attrs['@_depends']),
+  condition: attrs['@_condition'] === undefined ? undefined : String(attrs['@_condition']),
   children: parseChildren(children),
   _originalAttrs: extractOriginalAttrs(attrs),
 });
 
-// Parse Section
-const parseSection = (attrs: Record<string, unknown>, children: OrderedNode[]): FormSection => {
-  const subsections: FormSubSection[] = [];
-
-  for (const child of children) {
-    const childAttrs = getAttrs(child);
-    const tagName = getTagName(child);
-
-    if (tagName === 'subsection') {
-      subsections.push(parseSubSection(childAttrs, child[tagName] as OrderedNode[]));
-    }
-  }
-
-  return {
-    id: String(attrs['@_id'] || generateId()),
-    nodeType: 'section',
-    title: String(attrs['@_title'] || ''),
-    children: subsections,
-    _originalAttrs: extractOriginalAttrs(attrs),
-  };
-};
+// Parse Section - subsections plus anything else that legitimately sits at section level
+const parseSection = (attrs: Record<string, unknown>, children: OrderedNode[]): FormSection => ({
+  id: String(attrs['@_id'] || generateId()),
+  nodeType: 'section',
+  title: String(attrs['@_title'] || ''),
+  showInBarAdmin: attrs['@_showinbaradmin'] === undefined ? undefined : attrs['@_showinbaradmin'] === 'true',
+  children: parseChildren(children),
+  _originalAttrs: extractOriginalAttrs(attrs),
+});
 
 // Generate a random 5-digit suffix
 const generateSuffix = (): string => {
@@ -450,24 +536,13 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
     const attrs = getAttrs(questionnaireNode);
     const children = questionnaireNode['questionnaire'] as OrderedNode[];
 
-    // Parse sections
-    const sections: FormSection[] = [];
-    for (const child of children) {
-      const childAttrs = getAttrs(child);
-      const tagName = getTagName(child);
-
-      if (tagName === 'section') {
-        sections.push(parseSection(childAttrs, child[tagName] as OrderedNode[]));
-      }
-    }
-
     const form: FormQuestionnaire = {
       id: String(attrs['@_id'] || generateId()),
       nodeType: 'questionnaire',
       title: String(attrs['@_title'] || 'Untitled Form'),
       suffix: String(attrs['@_suffix'] || ''),
       nextId: parseInt(String(attrs['@_nextid'] || '1'), 10) || 1,
-      children: sections,
+      children: parseChildren(children),
       _originalAttrs: extractOriginalAttrs(attrs),
     };
 
@@ -534,6 +609,19 @@ const boolPlaceholder = (val: string | boolean | undefined): string => {
   return String(val || '');
 };
 
+// Override a numeric attribute only when the value actually changed.
+// Keeps original spellings like min="" (E-Bar treats it as 0) byte-identical.
+const setNumericAttr = (
+  attrs: Record<string, unknown>,
+  original: Record<string, string> | undefined,
+  name: string,
+  value: number
+): void => {
+  const orig = original?.[name];
+  if (orig !== undefined && (parseInt(orig, 10) || 0) === (value || 0)) return;
+  attrs[`@_${name}`] = String(value || 0);
+};
+
 // Helper to create CDATA content in the correct format for preserveOrder mode
 const makeCdata = (text: string | undefined | null): OrderedNode[] => {
   const t = text || '';
@@ -555,6 +643,9 @@ const buildWarning = (warning: FormWarning): OrderedNode => {
   const attrs = mergeAttrs(warning._originalAttrs, {
     '@_id': warning.id,
   });
+  if (warning.preventSubmit || warning._originalAttrs?.preventsubmit !== undefined) {
+    attrs['@_preventsubmit'] = boolPlaceholder(warning.preventSubmit);
+  }
   return createOrderedNode('warning', attrs, makeCdata(warning.text));
 };
 
@@ -564,7 +655,55 @@ const buildNote = (note: FormNote): OrderedNode => {
     '@_id': note.id,
     '@_ischeckitem': String(note.isCheckItem),
   });
+  if (note.prefix || note._originalAttrs?.prefix !== undefined) {
+    attrs['@_prefix'] = note.prefix;
+  }
   return createOrderedNode('note', attrs, makeCdata(note.text));
+};
+
+// Build SimpleText node
+const buildSimpleText = (st: FormSimpleText): OrderedNode => {
+  const attrs = mergeAttrs(st._originalAttrs, {
+    '@_id': st.id,
+  });
+  return createOrderedNode('simpletext', attrs, makeCdata(st.text));
+};
+
+// Build Validator node
+const buildValidator = (validator: FormValidator): OrderedNode => {
+  const attrs = mergeAttrs(validator._originalAttrs, {
+    '@_id': validator.id,
+    '@_validatorclass': validator.validatorClass,
+  });
+  return createOrderedNode('validator', attrs, []);
+};
+
+// Build Answer node
+const buildAnswer = (answer: FormAnswer): OrderedNode => {
+  const attrs = mergeAttrs(answer._originalAttrs, {
+    '@_id': answer.id,
+  });
+  return createOrderedNode('answer', attrs, makeCdata(answer.text));
+};
+
+// Build Unknown node - re-emit the preserved raw subtree verbatim.
+// The pretty-printing builder would re-indent inside the subtree (corrupting
+// mixed content), so we emit a placeholder token and splice the verbatim
+// serialization into the final string in a post-processing pass.
+let rawSubtrees: string[] = [];
+const resetRawSubtrees = (): void => { rawSubtrees = []; };
+const buildUnknown = (unknown: FormUnknown): OrderedNode | null => {
+  if (!unknown.raw) return null;
+  const verbatim = innerXmlBuilder().build([structuredClone(unknown.raw)]);
+  const token = `__FFRAW_${rawSubtrees.length}__`;
+  rawSubtrees.push(verbatim);
+  return { '#text': token } as OrderedNode;
+};
+const spliceRawSubtrees = (xmlContent: string): string => {
+  return xmlContent.replace(/__FFRAW_(\d+)__/g, (match, idx) => {
+    const raw = rawSubtrees[parseInt(idx, 10)];
+    return raw !== undefined ? raw : match;
+  });
 };
 
 // Build Option node
@@ -588,11 +727,19 @@ const buildReference = (ref: FormReference): OrderedNode => {
 
 // Build Question node
 const buildQuestion = (question: FormQuestion): OrderedNode => {
+  // keep original spellings: type="" is a legacy alias of char,
+  // required="" is E-Bar's spelling of false
+  const typeValue =
+    question._originalAttrs?.type === '' && question.type === 'char' ? '' : question.type;
+  const requiredValue =
+    question._originalAttrs?.required === '' && question.required === false
+      ? ''
+      : boolPlaceholder(question.required);
   const attrs = mergeAttrs(question._originalAttrs, {
     '@_id': question.id,
-    '@_type': question.type,
+    '@_type': typeValue,
     '@_format': question.format,
-    '@_required': boolPlaceholder(question.required),
+    '@_required': requiredValue,
     '@_triggervalue': boolPlaceholder(question.triggerValue),
     '@_comment': question.comment || '',
   });
@@ -612,13 +759,8 @@ const buildQuestion = (question: FormQuestion): OrderedNode => {
   // Build children in order
   const children: OrderedNode[] = [];
   for (const child of (question.children || [])) {
-    if (child.nodeType === 'description') {
-      children.push(buildDescription(child as FormDescription));
-    } else if (child.nodeType === 'option') {
-      children.push(buildOption(child as FormOption));
-    } else if (child.nodeType === 'reference') {
-      children.push(buildReference(child as FormReference));
-    }
+    const built = buildNode(child as FormNode);
+    if (built) children.push(built);
   }
 
   return createOrderedNode('question', attrs, children);
@@ -640,12 +782,30 @@ const buildCondition = (cond: FormCondition): OrderedNode | null => {
 const buildNode = (node: FormNode): OrderedNode | null => {
   if (!node) return null;
   switch (node.nodeType) {
+    case 'section':
+      return buildSection(node as FormSection);
+    case 'subsection':
+      return buildSubSection(node as FormSubSection);
     case 'description':
       return buildDescription(node as FormDescription);
     case 'warning':
       return buildWarning(node as FormWarning);
     case 'note':
       return buildNote(node as FormNote);
+    case 'simpletext':
+      return buildSimpleText(node as FormSimpleText);
+    case 'validator':
+      return buildValidator(node as FormValidator);
+    case 'answer':
+      return buildAnswer(node as FormAnswer);
+    case 'unknown':
+      return buildUnknown(node as FormUnknown);
+    case 'option':
+      return buildOption(node as FormOption);
+    case 'reference':
+      return buildReference(node as FormReference);
+    case 'condition':
+      return buildCondition(node as FormCondition);
     case 'question':
       return buildQuestion(node as FormQuestion);
     case 'entity': {
@@ -653,10 +813,28 @@ const buildNode = (node: FormNode): OrderedNode | null => {
       const attrs = mergeAttrs(entity._originalAttrs, {
         '@_id': entity.id,
         '@_title': entity.title,
-        '@_type': entity.type,
-        '@_min': String(entity.min || 0),
-        '@_max': String(entity.max || 0),
       });
+      // keep original spelling type="" (E-Bar treats it as single)
+      const origType = entity._originalAttrs?.type;
+      if (!(origType !== undefined && (origType === entity.type || (origType === '' && entity.type === 'single')))) {
+        attrs['@_type'] = entity.type;
+      }
+      setNumericAttr(attrs, entity._originalAttrs, 'min', entity.min);
+      setNumericAttr(attrs, entity._originalAttrs, 'max', entity.max);
+      // order/nextorder drive E-Bar's add-more bookkeeping; emit whenever the
+      // original had them, the values are non-default, or the entity repeats
+      if (entity._originalAttrs?.order !== undefined || entity.entityOrder !== 0 || entity.type === 'addmore') {
+        attrs['@_order'] = String(entity.entityOrder ?? 0);
+      }
+      if (entity._originalAttrs?.nextorder !== undefined || entity.nextOrder !== 1 || entity.type === 'addmore') {
+        attrs['@_nextorder'] = String(entity.nextOrder ?? 1);
+      }
+      if (entity.showInBarAdmin !== undefined) {
+        attrs['@_showinbaradmin'] = boolPlaceholder(entity.showInBarAdmin);
+      }
+      if (entity.isAmended || entity._originalAttrs?.isamended !== undefined) {
+        attrs['@_isamended'] = boolPlaceholder(entity.isAmended);
+      }
       if (entity.groupType) attrs['@_grouptype'] = entity.groupType;
       if (entity.ncbeName) attrs['@_ncbe_name'] = entity.ncbeName;
       if (entity.ncbeValue) attrs['@_ncbe_value'] = entity.ncbeValue;
@@ -722,12 +900,25 @@ const buildNode = (node: FormNode): OrderedNode | null => {
       const attrs = mergeAttrs(inc._originalAttrs, {
         '@_id': inc.id,
         '@_formname': inc.formName,
-        '@_title': inc.title,
         '@_type': inc.type,
-        '@_multipleinclude': boolPlaceholder(inc.multipleInclude),
-        '@_required': boolPlaceholder(inc.required),
       });
-      return createOrderedNode('includeform', attrs, []);
+      if (inc.title || inc._originalAttrs?.title !== undefined) {
+        attrs['@_title'] = inc.title;
+      }
+      // defaults per E-Bar: multipleinclude=false, required=true; emit only when
+      // the original carried the attr or the value is non-default
+      if (inc.multipleInclude || inc._originalAttrs?.multipleinclude !== undefined) {
+        attrs['@_multipleinclude'] = boolPlaceholder(inc.multipleInclude);
+      }
+      if (!inc.required || inc._originalAttrs?.required !== undefined) {
+        attrs['@_required'] = boolPlaceholder(inc.required);
+      }
+      const children: OrderedNode[] = [];
+      for (const child of (inc.children || [])) {
+        const built = buildNode(child);
+        if (built) children.push(built);
+      }
+      return createOrderedNode('includeform', attrs, children);
     }
     case 'required-doc': {
       const doc = node as FormRequiredDocument;
@@ -749,6 +940,11 @@ const buildSubSection = (subsection: FormSubSection): OrderedNode => {
     '@_id': subsection.id,
     '@_title': subsection.title,
   });
+  if (subsection.showInBarAdmin !== undefined) {
+    attrs['@_showinbaradmin'] = boolPlaceholder(subsection.showInBarAdmin);
+  }
+  if (subsection.depends !== undefined) attrs['@_depends'] = subsection.depends;
+  if (subsection.condition !== undefined) attrs['@_condition'] = boolPlaceholder(subsection.condition);
   const children: OrderedNode[] = [];
   for (const child of (subsection.children || [])) {
     const built = buildNode(child);
@@ -763,9 +959,13 @@ const buildSection = (section: FormSection): OrderedNode => {
     '@_id': section.id,
     '@_title': section.title,
   });
+  if (section.showInBarAdmin !== undefined) {
+    attrs['@_showinbaradmin'] = boolPlaceholder(section.showInBarAdmin);
+  }
   const children: OrderedNode[] = [];
-  for (const sub of (section.children || [])) {
-    children.push(buildSubSection(sub));
+  for (const child of (section.children || [])) {
+    const built = buildNode(child);
+    if (built) children.push(built);
   }
   return createOrderedNode('section', attrs, children);
 };
@@ -783,6 +983,7 @@ const fixBooleanPlaceholders = (xmlContent: string): string => {
 
 // Build XML from form (questionnaire)
 export const buildXML = (form: FormQuestionnaire): string => {
+  resetRawSubtrees();
   const builder = new XMLBuilder(builderOptions);
 
   // Build questionnaire
@@ -794,15 +995,16 @@ export const buildXML = (form: FormQuestionnaire): string => {
   });
 
   const sectionNodes: OrderedNode[] = [];
-  for (const section of (form.children || [])) {
-    sectionNodes.push(buildSection(section));
+  for (const child of (form.children || [])) {
+    const built = buildNode(child);
+    if (built) sectionNodes.push(built);
   }
 
   const xmlObj: OrderedNode[] = [
     createOrderedNode('questionnaire', questionnaireAttrs, sectionNodes),
   ];
 
-  const xmlContent = builder.build(xmlObj);
+  const xmlContent = spliceRawSubtrees(builder.build(xmlObj));
   return `<?xml version="1.0" encoding="UTF-8"?>\n${fixBooleanPlaceholders(xmlContent)}`;
 };
 
@@ -861,6 +1063,7 @@ export const parseSubformXML = (xmlString: string): FormSubform | null => {
 
 // Build Subform XML - now uses shared helpers
 export const buildSubformXML = (form: FormSubform): string => {
+  resetRawSubtrees();
   const builder = new XMLBuilder(builderOptions);
 
   // Build subform
@@ -882,7 +1085,7 @@ export const buildSubformXML = (form: FormSubform): string => {
     createOrderedNode('subform', subformAttrs, childNodes),
   ];
 
-  const xmlContent = builder.build(xmlObj);
+  const xmlContent = spliceRawSubtrees(builder.build(xmlObj));
   return `<?xml version="1.0" encoding="UTF-8"?>\n${fixBooleanPlaceholders(xmlContent)}`;
 };
 
