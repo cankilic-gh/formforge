@@ -17,6 +17,8 @@ import {
   FormIncludeForm,
   FormRequiredDocument,
   FormReference,
+  FormSimpleText,
+  FormValidator,
   FormRoot,
   QuestionType,
   ProfileReferenceField,
@@ -57,6 +59,8 @@ interface FormState {
   addDescription: (parentId: string, text: string) => void;
   addWarning: (parentId: string, text: string) => void;
   addNote: (parentId: string, text: string) => void;
+  addSimpleText: (parentId: string, text: string) => void;
+  addValidator: (parentId: string, validatorClass: string) => void;
   addIncludeForm: (parentId: string, formName: string, title: string) => void;
   addRequiredDoc: (parentId: string, title: string) => void;
   addAddressSet: (parentId: string) => void;
@@ -118,17 +122,59 @@ const findParentRecursive = (node: FormNode, nodeId: string, parent: FormNode | 
   return null;
 };
 
-// Collect all node IDs
-const collectNodeIds = (node: FormNode): string[] => {
-  const ids: string[] = [node.id];
-
+// Walk every node including conditionlogic's separate conditions array
+const walkAllNodes = (node: FormNode, visit: (n: FormNode) => void): void => {
+  visit(node);
+  if (node.nodeType === 'conditionlogic') {
+    const cl = node as { conditions?: FormNode[] };
+    (cl.conditions || []).forEach((c) => walkAllNodes(c, visit));
+  }
   if ('children' in node && Array.isArray(node.children)) {
     for (const child of node.children) {
-      ids.push(...collectNodeIds(child as FormNode));
+      walkAllNodes(child as FormNode, visit);
     }
   }
+};
 
+// Collect all node IDs (condition element ids included)
+const collectNodeIds = (node: FormNode): string[] => {
+  const ids: string[] = [];
+  walkAllNodes(node, (n) => ids.push(n.id));
   return ids;
+};
+
+// Assign fresh ids to every node in a subtree and remap the internal
+// references that point at them (condition.questionId, subsection.depends).
+// References to nodes OUTSIDE the subtree are left untouched.
+const remapSubtreeIds = (root: FormNode, nextIdFn: () => string): void => {
+  const mapping = new Map<string, string>();
+
+  walkAllNodes(root, (n) => {
+    const fresh = nextIdFn();
+    mapping.set(n.id, fresh);
+    n.id = fresh;
+  });
+
+  walkAllNodes(root, (n) => {
+    if (n.nodeType === 'condition') {
+      const cond = n as { questionId?: string; _originalAttrs?: Record<string, string> };
+      if (cond.questionId && mapping.has(cond.questionId)) {
+        cond.questionId = mapping.get(cond.questionId)!;
+        if (cond._originalAttrs?.questionid !== undefined) {
+          cond._originalAttrs.questionid = cond.questionId;
+        }
+      }
+    }
+    if (n.nodeType === 'subsection') {
+      const ss = n as { depends?: string; _originalAttrs?: Record<string, string> };
+      if (ss.depends && mapping.has(ss.depends)) {
+        ss.depends = mapping.get(ss.depends)!;
+        if (ss._originalAttrs?.depends !== undefined) {
+          ss._originalAttrs.depends = ss.depends;
+        }
+      }
+    }
+  });
 };
 
 export const useFormStore = create<FormState>()(
@@ -213,6 +259,7 @@ export const useFormStore = create<FormState>()(
         type,
         min: 0,
         max: type === 'addmore' ? 10 : 0,
+        entityOrder: 0,
         nextOrder: 1,
         showInBarAdmin: false,
         isAmended: false,
@@ -599,6 +646,7 @@ export const useFormStore = create<FormState>()(
             id: generateId(),
             nodeType: 'warning',
             text,
+            preventSubmit: false,
           };
 
           // Now clone from updated state
@@ -622,6 +670,7 @@ export const useFormStore = create<FormState>()(
             nodeType: 'note',
             text,
             isCheckItem: false,
+            prefix: '',
           };
 
           // Now clone from updated state
@@ -630,6 +679,46 @@ export const useFormStore = create<FormState>()(
 
           if (parent && 'children' in parent) {
             (parent.children as FormNode[]).push(newNote);
+            set({ form: updatedForm });
+            get().saveToHistory();
+          }
+        },
+
+        addSimpleText: (parentId, text) => {
+          const form = get().form;
+          if (!form) return;
+
+          const newSimpleText: FormSimpleText = {
+            id: generateId(),
+            nodeType: 'simpletext',
+            text,
+          };
+
+          const updatedForm = deepClone(get().form!);
+          const parent = findNodeRecursive(updatedForm, parentId);
+
+          if (parent && 'children' in parent) {
+            (parent.children as FormNode[]).push(newSimpleText);
+            set({ form: updatedForm });
+            get().saveToHistory();
+          }
+        },
+
+        addValidator: (parentId, validatorClass) => {
+          const form = get().form;
+          if (!form) return;
+
+          const newValidator: FormValidator = {
+            id: generateId(),
+            nodeType: 'validator',
+            validatorClass,
+          };
+
+          const updatedForm = deepClone(get().form!);
+          const parent = findNodeRecursive(updatedForm, parentId);
+
+          if (parent && 'children' in parent) {
+            (parent.children as FormNode[]).push(newValidator);
             set({ form: updatedForm });
             get().saveToHistory();
           }
@@ -853,21 +942,19 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
-          const node = findNodeRecursive(updatedForm, nodeId);
+          const node = findNodeRecursive(form, nodeId);
+          if (!node) return;
+
+          const cloned = deepClone(node);
+          // Fresh ids for the whole clone; internal references follow the rename.
+          // generateId bumps form.nextId via set(), so the working copy must be
+          // cloned AFTER the remap or those bumps get thrown away.
+          remapSubtreeIds(cloned, generateId);
+
+          const updatedForm = deepClone(get().form!);
           const parent = findParentRecursive(updatedForm, nodeId);
 
-          if (node && parent && 'children' in parent) {
-            const cloned = deepClone(node);
-            // Regenerate all IDs
-            const regenerateIds = (n: FormNode): void => {
-              n.id = generateId();
-              if ('children' in n && Array.isArray(n.children)) {
-                n.children.forEach((c) => regenerateIds(c as FormNode));
-              }
-            };
-            regenerateIds(cloned);
-
+          if (parent && 'children' in parent) {
             const children = parent.children as FormNode[];
             const index = children.findIndex((c) => c.id === nodeId);
             children.splice(index + 1, 0, cloned);
@@ -1115,19 +1202,9 @@ export const useFormStore = create<FormState>()(
           const suffix = updatedForm.suffix;
           let counter = 1;
 
-          // Recursive function to regenerate IDs for all nodes
-          const regenerateIds = (node: FormNode): void => {
-            // Assign new ID using counter + suffix format
-            node.id = `${counter}${suffix}`;
-            counter++;
-
-            // Process children if they exist
-            if ('children' in node && Array.isArray(node.children)) {
-              node.children.forEach((child) => regenerateIds(child as FormNode));
-            }
-          };
-
-          regenerateIds(updatedForm);
+          // Sequential ids for every node (condition elements included);
+          // condition.questionId / subsection.depends references follow the rename
+          remapSubtreeIds(updatedForm, () => `${counter++}${suffix}`);
 
           // Update nextId to continue from where we left off
           updatedForm.nextId = counter;
@@ -1194,11 +1271,20 @@ export const useFormStore = create<FormState>()(
         form: state.form,
         expandedNodes: Array.from(state.expandedNodes),
       } as unknown as FormState),
-      merge: (persisted, current) => ({
-        ...(persisted as Partial<FormState>),
-        ...current,
-        expandedNodes: new Set((persisted as { expandedNodes?: string[] })?.expandedNodes || []),
-      }),
+      merge: (persisted, current) => {
+        // current (defaults + actions) first, then restore persisted data fields -
+        // the previous order let current's form:null clobber the persisted form
+        const p = persisted as { form?: FormRoot | null; expandedNodes?: string[] } | undefined;
+        const restoredForm = p?.form ?? null;
+        return {
+          ...current,
+          form: restoredForm,
+          expandedNodes: new Set(p?.expandedNodes || []),
+          // reseed history so undo/reload work after a page refresh
+          history: restoredForm ? [deepClone(restoredForm)] : [],
+          historyIndex: restoredForm ? 0 : -1,
+        };
+      },
     }
   )
 );

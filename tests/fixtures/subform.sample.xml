@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<subform id="1888" nextid="10" suffix="888" order="0" title="Fixture Subform">
+    <entity id="2888" title="Reference" type="single" min="0" max="0">
+        <question id="3888" type="char" required="true" format="" triggervalue="" comment="" maxlength="100">
+            <description id="4888" prefix=""><![CDATA[Full name]]></description>
+        </question>
+        <answer id="5888"><![CDATA[John Doe]]></answer>
+    </entity>
+</subform>

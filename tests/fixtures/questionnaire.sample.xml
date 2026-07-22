@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<questionnaire id="1777" nextid="30" suffix="777" title="Fixture Form" order="0">
+    <section id="2777" title="Personal">
+        <subsection id="3777" title="Basics" depends="20777" condition="true">
+            <question id="4777" type="radio" required="true" format="" triggervalue="" comment="" ncbe_name="">
+                <description id="5777" prefix="1."><![CDATA[Do you have <strong>prior</strong> admissions?]]></description>
+                <option id="6777" value="Yes"><![CDATA[Yes]]></option>
+                <option id="7777" value="No"><![CDATA[No]]></option>
+            </question>
+            <conditionlogic id="20777" operator="or">
+                <condition id="21777" value="Yes" questionid="4777" equals="true"/>
+            </conditionlogic>
+            <question id="8777" type="" required="" format="" triggervalue="" comment="" maxlength="0">
+                <description id="9777" prefix=""><![CDATA[Explain]]></description>
+            </question>
+            <simpletext id="10777"><![CDATA[<h5>Heading block</h5>]]></simpletext>
+            <note id="11777" ischeckitem="false" prefix="NOTE:"><![CDATA[Keep records.]]></note>
+            <warning id="12777" preventsubmit="true"><![CDATA[Blocking warning]]></warning>
+            <description id="25777" prefix="">Hello <strong>mixed</strong> content</description>
+        </subsection>
+        <subsection id="13777" title="Employment">
+            <entity id="14777" title="Employer" type="addmore" min="1" max="10" order="0" nextorder="1">
+                <question id="15777" type="employer" required="true" format="" triggervalue="" comment="">
+                    <description id="16777" prefix=""><![CDATA[Employer name]]></description>
+                </question>
+                <validator id="17777" validatorclass="ilg.ebar.forms.validators.EmpDateGapValidator"/>
+            </entity>
+            <conditionset id="22777" operator="and">
+                <conditional id="23777" condition="true">
+                    <description id="24777" prefix=""><![CDATA[Shown when true]]></description>
+                </conditional>
+            </conditionset>
+            <includeform id="18777" formname="character_ref" title="Character Reference" type="online" multipleinclude="true" required="false"/>
+            <required-doc id="19777" title="Birth Certificate" preventsubmit="false"/>
+        </subsection>
+    </section>
+</questionnaire>

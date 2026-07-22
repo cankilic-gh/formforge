@@ -14,6 +14,8 @@ export type QuestionType =
   | 'res_date_end'
   | 'state'
   | 'state_ube'
+  | 'state_ube_oct'
+  | 'state_ube_cur_exp'
   | 'state_mutual'
   | 'country'
   | 'county'
@@ -23,6 +25,10 @@ export type QuestionType =
   | 'signature'
   | 'profilereference'
   | 'examreference'
+  | 'entityname'
+  | 'phonenumber'
+  | 'supervisor'
+  | 'employer'
   | 'notice';
 
 // Date Formats
@@ -71,8 +77,8 @@ export type ConditionOperator =
   | 'contain'
   | 'else';
 
-// Entity Types
-export type EntityType = 'single' | 'addmore';
+// Entity Types (subgroup/maingroup are grouping labels; '' behaves like single in E-Bar)
+export type EntityType = 'single' | 'addmore' | 'subgroup' | 'maingroup';
 
 // Validator Classes
 export type ValidatorClass =
@@ -283,6 +289,7 @@ export interface FormDescription extends BaseNode {
 export interface FormWarning extends BaseNode {
   nodeType: 'warning';
   text: string;
+  preventSubmit: boolean;
 }
 
 // Note
@@ -290,6 +297,27 @@ export interface FormNote extends BaseNode {
   nodeType: 'note';
   text: string;
   isCheckItem: boolean;
+  prefix: string;
+}
+
+// SimpleText - bare HTML fragment rendered verbatim by E-Bar (simpletext.tpl is just "%s")
+export interface FormSimpleText extends BaseNode {
+  nodeType: 'simpletext';
+  text: string;
+}
+
+// Validator - standalone validator element (validatorclass = fully-qualified Java class)
+export interface FormValidator extends BaseNode {
+  nodeType: 'validator';
+  validatorClass: string;
+}
+
+// Unknown - any element FormForge does not model; raw subtree is preserved
+// and re-emitted verbatim so nothing is ever silently lost
+export interface FormUnknown extends BaseNode {
+  nodeType: 'unknown';
+  tagName: string;
+  raw: unknown;
 }
 
 // Reference (for profilereference)
@@ -326,7 +354,7 @@ export interface FormQuestion extends BaseNode {
   ncbeName: string;
   ncbeCurrently: boolean;
   ilgName: string;
-  children: (FormDescription | FormOption | FormReference | FormAnswer)[];
+  children: (FormDescription | FormOption | FormReference | FormAnswer | FormUnknown)[];
 }
 
 // Conditional
@@ -340,7 +368,7 @@ export interface FormConditional extends BaseNode {
 export interface FormConditionSet extends BaseNode {
   nodeType: 'conditionset';
   operator: ConditionOperator;
-  children: (FormQuestion | FormConditional | FormDescription | FormWarning | FormNote)[];
+  children: FormNode[];
 }
 
 // Condition (used in conditionlogic)
@@ -366,6 +394,7 @@ export interface FormEntity extends BaseNode {
   type: EntityType;
   min: number;
   max: number;
+  entityOrder: number;
   nextOrder: number;
   showInBarAdmin?: boolean;
   isAmended: boolean;
@@ -385,6 +414,7 @@ export interface FormIncludeForm extends BaseNode {
   type: string;
   multipleInclude: boolean;
   required: boolean;
+  children?: FormNode[];
 }
 
 // RequiredDocument
@@ -399,6 +429,8 @@ export interface FormSubSection extends BaseNode {
   nodeType: 'subsection';
   title: string;
   showInBarAdmin?: boolean;
+  depends?: string;
+  condition?: string;
   children: FormNode[];
 }
 
@@ -407,7 +439,7 @@ export interface FormSection extends BaseNode {
   nodeType: 'section';
   title: string;
   showInBarAdmin?: boolean;
-  children: FormSubSection[];
+  children: FormNode[];
 }
 
 // Questionnaire (Root)
@@ -416,7 +448,7 @@ export interface FormQuestionnaire extends BaseNode {
   title: string;
   suffix: string;
   nextId: number;
-  children: FormSection[];
+  children: FormNode[];
 }
 
 // Subform (Root for subforms - no sections, directly contains entities)
@@ -447,7 +479,10 @@ export type FormNode =
   | FormReference
   | FormAnswer
   | FormIncludeForm
-  | FormRequiredDocument;
+  | FormRequiredDocument
+  | FormSimpleText
+  | FormValidator
+  | FormUnknown;
 
 // Root node type (either questionnaire or subform)
 export type FormRoot = FormQuestionnaire | FormSubform;
@@ -485,6 +520,8 @@ export const QUESTION_TYPE_META: QuestionTypeMeta[] = [
   // Location
   { type: 'state', label: 'State', category: 'location', hasOptions: false, hasFormat: true, formats: ['', 'exclude_state', 'exclude_province', 'gov_state'], icon: 'MapPin' },
   { type: 'state_ube', label: 'UBE State', category: 'location', hasOptions: false, hasFormat: false, icon: 'MapPin' },
+  { type: 'state_ube_oct', label: 'UBE State (NJ Oct)', category: 'location', hasOptions: false, hasFormat: false, icon: 'MapPin' },
+  { type: 'state_ube_cur_exp', label: 'UBE State (Except Current)', category: 'location', hasOptions: false, hasFormat: false, icon: 'MapPin' },
   { type: 'state_mutual', label: 'Mutual State', category: 'location', hasOptions: false, hasFormat: false, icon: 'MapPin' },
   { type: 'country', label: 'Country', category: 'location', hasOptions: false, hasFormat: false, icon: 'Globe' },
   { type: 'county', label: 'County', category: 'location', hasOptions: false, hasFormat: false, icon: 'Map' },
@@ -496,6 +533,10 @@ export const QUESTION_TYPE_META: QuestionTypeMeta[] = [
   { type: 'signature', label: 'Signature', category: 'special', hasOptions: false, hasFormat: false, icon: 'PenTool' },
   { type: 'profilereference', label: 'Profile Reference', category: 'special', hasOptions: false, hasFormat: true, formats: ['fullname', 'firstname', 'middlename', 'lastname', 'suffix', 'title', 'ssn', 'ssn_last_four', 'dob', 'sex', 'place_of_birth', 'pob_city', 'pob_state', 'pob_country', 'addresstype', 'address1', 'address2', 'city', 'state', 'zip', 'county', 'country', 'fulladdress', 'email', 'primaryphone', 'cellphone', 'phone_office', 'fax', 'firmname', 'ncbe_number', 'abbreviated_lawschool', 'examfirstday', 'examsecondday', 'exammonth', 'examyear', 'currentdeadline', 'currentfee', 'today'], icon: 'User' },
   { type: 'examreference', label: 'Exam Reference', category: 'special', hasOptions: false, hasFormat: false, icon: 'FileText' },
+  { type: 'entityname', label: 'Entity Name', category: 'special', hasOptions: false, hasFormat: false, icon: 'List' },
+  { type: 'phonenumber', label: 'Phone Number', category: 'special', hasOptions: false, hasFormat: false, icon: 'Hash' },
+  { type: 'supervisor', label: 'Supervising Attorney', category: 'special', hasOptions: false, hasFormat: false, icon: 'User' },
+  { type: 'employer', label: 'Employer', category: 'special', hasOptions: false, hasFormat: false, icon: 'Building' },
   { type: 'notice', label: 'Notice', category: 'special', hasOptions: false, hasFormat: false, icon: 'Info' },
 ];
 
@@ -506,4 +547,5 @@ export const CONDITION_OPERATORS: { value: ConditionOperator; label: string; des
   { value: 'smaller', label: 'SMALLER', description: 'Date comparison (first < second)' },
   { value: 'switch', label: 'SWITCH', description: 'Multiple value branching' },
   { value: 'contain', label: 'CONTAIN', description: 'String contains check' },
+  { value: 'else', label: 'ELSE', description: 'Fallback branch when nothing else matches' },
 ];

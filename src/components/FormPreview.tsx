@@ -56,13 +56,18 @@ export const FormPreview: React.FC = () => {
   const subsectionOptions = useMemo<SubsectionOption[]>(() => {
     if (!form || !isQuestionnaire) return [];
     const questionnaire = form as FormQuestionnaire;
-    return questionnaire.children.flatMap((section) =>
-      section.children.map((subsection) => ({
-        id: subsection.id,
-        title: subsection.title,
-        sectionId: section.id,
-        sectionTitle: section.title,
-      }))
+    const sections = questionnaire.children.filter(
+      (c): c is FormSection => c.nodeType === 'section'
+    );
+    return sections.flatMap((section) =>
+      section.children
+        .filter((c): c is FormSubSection => c.nodeType === 'subsection')
+        .map((subsection) => ({
+          id: subsection.id,
+          title: subsection.title,
+          sectionId: section.id,
+          sectionTitle: section.title,
+        }))
     );
   }, [form, isQuestionnaire]);
 
@@ -82,12 +87,17 @@ export const FormPreview: React.FC = () => {
   const filteredSections = useMemo<FormSection[]>(() => {
     if (!form || !isQuestionnaire) return [];
     const questionnaire = form as FormQuestionnaire;
-    if (!selectedSubsectionId) return questionnaire.children;
+    const sections = questionnaire.children.filter(
+      (c): c is FormSection => c.nodeType === 'section'
+    );
+    if (!selectedSubsectionId) return sections;
 
-    return questionnaire.children
+    return sections
       .map((section) => ({
         ...section,
-        children: section.children.filter((sub) => sub.id === selectedSubsectionId),
+        children: section.children.filter(
+          (sub) => sub.nodeType === 'subsection' && sub.id === selectedSubsectionId
+        ),
       }))
       .filter((section) => section.children.length > 0);
   }, [form, selectedSubsectionId, isQuestionnaire]);
@@ -230,9 +240,13 @@ const SubformPreview: React.FC<{ subform: FormSubform }> = ({ subform }) => (
 const SectionPreview: React.FC<{ section: FormSection }> = ({ section }) => (
   <div className="mb-5">
     <h2 className="border-bottom pb-2 mb-4">{section.title}</h2>
-    {section.children.map((subsection) => (
-      <SubSectionPreview key={subsection.id} subsection={subsection} />
-    ))}
+    {section.children.map((child) =>
+      child.nodeType === 'subsection' ? (
+        <SubSectionPreview key={child.id} subsection={child as FormSubSection} />
+      ) : (
+        <NodePreview key={child.id} node={child} />
+      )
+    )}
   </div>
 );
 
@@ -265,6 +279,22 @@ const NodePreview: React.FC<{ node: FormNode }> = ({ node }) => {
       return <WarningPreview warning={node as FormWarning} />;
     case 'note':
       return <NotePreview note={node as FormNote} />;
+    case 'simpletext':
+      // E-Bar's simpletext.tpl is literally "%s" - a bare HTML fragment
+      return (
+        <div
+          className="mb-2"
+          dangerouslySetInnerHTML={{ __html: ensureString((node as { text?: string }).text) }}
+        />
+      );
+    case 'validator':
+      return null; // validators are invisible at render time
+    case 'unknown':
+      return (
+        <div className="mb-2 rounded border border-dashed border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+          &lt;{(node as { tagName?: string }).tagName}&gt; preserved verbatim (not rendered)
+        </div>
+      );
     default:
       return null;
   }

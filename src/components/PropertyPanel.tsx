@@ -17,6 +17,9 @@ import {
   FormNote,
   FormIncludeForm,
   FormRequiredDocument,
+  FormSimpleText,
+  FormValidator,
+  FormUnknown,
   QUESTION_TYPE_META,
   CONDITION_OPERATORS,
   PROFILE_REFERENCE_FIELDS,
@@ -61,6 +64,9 @@ export const PropertyPanel: React.FC = () => {
       {node.nodeType === 'note' && <NoteProps node={node as FormNote} />}
       {node.nodeType === 'includeform' && <IncludeFormProps node={node as FormIncludeForm} />}
       {node.nodeType === 'required-doc' && <RequiredDocProps node={node as FormRequiredDocument} />}
+      {node.nodeType === 'simpletext' && <SimpleTextProps node={node as FormSimpleText} />}
+      {node.nodeType === 'validator' && <ValidatorProps node={node as FormValidator} />}
+      {node.nodeType === 'unknown' && <UnknownProps node={node as FormUnknown} />}
     </div>
   );
 };
@@ -179,6 +185,29 @@ const SubSectionProps: React.FC<{ node: FormSubSection }> = ({ node }) => {
           onChange={(checked) => updateNode(node.id, { showInBarAdmin: checked })}
         />
       </Field>
+      <details className="mt-6">
+        <summary className="text-xs font-medium text-slate-500 cursor-pointer hover:text-slate-700">
+          Conditional Display
+        </summary>
+        <div className="mt-4 space-y-4 pl-3 border-l-2 border-slate-100">
+          <Field label="Depends On" hint="ID of a conditionset/conditionlogic that controls this subsection">
+            <input
+              type="text"
+              value={node.depends || ''}
+              onChange={(e) => updateNode(node.id, { depends: e.target.value || undefined })}
+              className="w-full"
+            />
+          </Field>
+          <Field label="Condition Value" hint="Show when the evaluation equals this value (true/false)">
+            <input
+              type="text"
+              value={node.condition || ''}
+              onChange={(e) => updateNode(node.id, { condition: e.target.value || undefined })}
+              className="w-full"
+            />
+          </Field>
+        </div>
+      </details>
     </div>
   );
 };
@@ -517,6 +546,12 @@ const WarningProps: React.FC<{ node: FormWarning }> = ({ node }) => {
           placeholder="Enter warning text..."
         />
       </Field>
+      <Field label="Prevent Submit" hint="Blocks application submission while this warning is active">
+        <ToggleSwitch
+          checked={node.preventSubmit ?? false}
+          onChange={(checked) => updateNode(node.id, { preventSubmit: checked })}
+        />
+      </Field>
     </div>
   );
 };
@@ -527,6 +562,15 @@ const NoteProps: React.FC<{ node: FormNote }> = ({ node }) => {
 
   return (
     <div className="space-y-4">
+      <Field label="Prefix">
+        <input
+          type="text"
+          value={node.prefix || ''}
+          onChange={(e) => updateNode(node.id, { prefix: e.target.value })}
+          className="w-full"
+          placeholder="e.g., NOTE:"
+        />
+      </Field>
       <Field label="Text">
         <RichTextEditor
           value={node.text || ''}
@@ -543,6 +587,51 @@ const NoteProps: React.FC<{ node: FormNote }> = ({ node }) => {
     </div>
   );
 };
+
+// SimpleText Properties - raw HTML fragment, E-Bar renders it verbatim (template is just %s)
+const SimpleTextProps: React.FC<{ node: FormSimpleText }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Raw HTML" hint="Rendered verbatim by E-Bar with no wrapper markup">
+        <RichTextEditor
+          value={node.text || ''}
+          onChange={(html) => updateNode(node.id, { text: html })}
+          placeholder="Enter raw HTML fragment..."
+        />
+      </Field>
+    </div>
+  );
+};
+
+// Validator Properties
+const ValidatorProps: React.FC<{ node: FormValidator }> = ({ node }) => {
+  const { updateNode } = useFormStore();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Validator Class" hint="Fully-qualified Java class, e.g. ilg.ebar.forms.validators.EmpDateGapValidator">
+        <input
+          type="text"
+          value={node.validatorClass || ''}
+          onChange={(e) => updateNode(node.id, { validatorClass: e.target.value })}
+          className="w-full font-mono text-xs"
+        />
+      </Field>
+    </div>
+  );
+};
+
+// Unknown Properties - read-only, preserved verbatim on export
+const UnknownProps: React.FC<{ node: FormUnknown }> = ({ node }) => (
+  <div className="space-y-4">
+    <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+      FormForge does not model <code className="font-mono">&lt;{node.tagName}&gt;</code> yet.
+      The element is preserved exactly as-is and will be re-emitted verbatim on save.
+    </div>
+  </div>
+);
 
 // Entity Properties
 const EntityProps: React.FC<{ node: FormEntity }> = ({ node }) => {
@@ -561,11 +650,13 @@ const EntityProps: React.FC<{ node: FormEntity }> = ({ node }) => {
       <Field label="Type">
         <select
           value={node.type}
-          onChange={(e) => updateNode(node.id, { type: e.target.value as 'single' | 'addmore' })}
+          onChange={(e) => updateNode(node.id, { type: e.target.value as FormEntity['type'] })}
           className="w-full"
         >
           <option value="single">Single</option>
           <option value="addmore">Add More (Repeatable)</option>
+          <option value="maingroup">Main Group</option>
+          <option value="subgroup">Sub Group</option>
         </select>
       </Field>
       {node.type === 'addmore' && (
