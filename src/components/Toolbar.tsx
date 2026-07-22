@@ -31,28 +31,28 @@ import { useRef, useState, useEffect } from 'react';
 let persistedFileHandle: FileSystemFileHandle | null = null;
 let persistedFileName: string | null = null;
 
-// Florida (ET) timestamp component
+// Deploy timestamp in Florida (ET) time - baked in at build, always visible.
+// Formatted in useEffect so server/client Intl differences can't break hydration.
 const LastUpdated: React.FC = () => {
-  const { form } = useFormStore();
   const [time, setTime] = useState('');
 
   useEffect(() => {
-    if (!form) { setTime(''); return; }
-    const update = () => {
-      setTime(new Date().toLocaleString('en-US', {
-        timeZone: 'America/New_York',
-        month: 'short', day: 'numeric',
-        hour: 'numeric', minute: '2-digit',
-        hour12: true,
-      }));
-    };
-    update();
-    const interval = setInterval(update, 60000);
-    return () => clearInterval(interval);
-  }, [form]);
+    const buildTime = process.env.NEXT_PUBLIC_BUILD_TIME;
+    if (!buildTime) return;
+    setTime(new Date(buildTime).toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+      hour12: true,
+    }));
+  }, []);
 
   if (!time) return null;
-  return <span className="text-[9px] text-slate-400 leading-none mt-0.5">{time} ET</span>;
+  return (
+    <span className="text-[9px] text-slate-400 leading-none mt-0.5" title="Last deployed (ET)">
+      {time} ET
+    </span>
+  );
 };
 
 interface ToolbarProps {
