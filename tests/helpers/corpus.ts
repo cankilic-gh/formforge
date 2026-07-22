@@ -1,12 +1,23 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
-// Real E-Bar form corpus. Override with EBAR_STATES_DIR when the repos live elsewhere.
-const DEFAULT_STATES_DIR =
-  '/Users/cankilic/Documents/GitHub-ILGTechnologies/ILG-EBAS-E-Bar/states';
+// Real E-Bar form corpus. Optional: the vendored fixtures cover the always-run
+// round-trip guarantee; this large corpus suite runs only when the E-Bar repo is
+// present. Set EBAR_STATES_DIR to override; otherwise we probe common locations
+// so it works on any machine regardless of the home-dir username.
+const CANDIDATE_STATES_DIRS = [
+  path.join(os.homedir(), 'Documents/GitHub-ILGTechnologies/ILG-EBAS-E-Bar/states'),
+  path.join(os.homedir(), 'Documents/GitHub/ILG-EBAS-E-Bar/states'),
+  // sibling of the formforge repo
+  path.resolve(process.cwd(), '../GitHub-ILGTechnologies/ILG-EBAS-E-Bar/states'),
+  path.resolve(process.cwd(), '../ILG-EBAS-E-Bar/states'),
+];
 
-export const statesDir = (): string =>
-  process.env.EBAR_STATES_DIR || DEFAULT_STATES_DIR;
+export const statesDir = (): string => {
+  if (process.env.EBAR_STATES_DIR) return process.env.EBAR_STATES_DIR;
+  return CANDIDATE_STATES_DIRS.find(fs.existsSync) || CANDIDATE_STATES_DIRS[0];
+};
 
 export const corpusAvailable = (): boolean => fs.existsSync(statesDir());
 
