@@ -116,3 +116,22 @@ describe('formStore ID management', () => {
     expect(questions).toHaveLength(2);
   });
 });
+
+describe('formStore nextId bookkeeping', () => {
+  test('duplicateNode advances nextId past the freshly minted ids', () => {
+    useFormStore.setState({ form: null, selectedNodeId: null, history: [], historyIndex: -1 });
+    const form = parseXML(FIXTURE) as FormQuestionnaire;
+    useFormStore.getState().setForm(form);
+    useFormStore.getState().duplicateNode('39'); // subsection with 6 descendants
+
+    const updated = useFormStore.getState().form as FormQuestionnaire;
+    const maxNum = Math.max(
+      ...collectIds(updated)
+        .filter(id => id.endsWith(updated.suffix))
+        .map(id => parseInt(id.slice(0, -updated.suffix.length), 10))
+        .filter(n => !isNaN(n))
+    );
+    // before the fix, generateId's nextId bumps were clobbered by a stale clone
+    expect(updated.nextId).toBeGreaterThan(maxNum);
+  });
+});

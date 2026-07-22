@@ -59,6 +59,15 @@ export default function TestLab() {
 
   const openPreview = (r: TestResult) => {
     if (!r.form) return;
+    const current = useFormStore.getState().form;
+    if (
+      current &&
+      !window.confirm(
+        `Previewing "${r.fileName}" replaces the form currently open in the editor ("${current.title}"). Continue?`
+      )
+    ) {
+      return;
+    }
     setForm(JSON.parse(JSON.stringify(r.form)));
     setSelected(r);
     setShowPreview(true);

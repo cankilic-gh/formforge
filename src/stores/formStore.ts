@@ -942,15 +942,19 @@ export const useFormStore = create<FormState>()(
           const form = get().form;
           if (!form) return;
 
-          const updatedForm = deepClone(form);
-          const node = findNodeRecursive(updatedForm, nodeId);
+          const node = findNodeRecursive(form, nodeId);
+          if (!node) return;
+
+          const cloned = deepClone(node);
+          // Fresh ids for the whole clone; internal references follow the rename.
+          // generateId bumps form.nextId via set(), so the working copy must be
+          // cloned AFTER the remap or those bumps get thrown away.
+          remapSubtreeIds(cloned, generateId);
+
+          const updatedForm = deepClone(get().form!);
           const parent = findParentRecursive(updatedForm, nodeId);
 
-          if (node && parent && 'children' in parent) {
-            const cloned = deepClone(node);
-            // Fresh ids for the whole clone; internal references follow the rename
-            remapSubtreeIds(cloned, generateId);
-
+          if (parent && 'children' in parent) {
             const children = parent.children as FormNode[];
             const index = children.findIndex((c) => c.id === nodeId);
             children.splice(index + 1, 0, cloned);

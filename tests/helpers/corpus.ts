@@ -3,7 +3,7 @@ import path from 'path';
 
 // Real E-Bar form corpus. Override with EBAR_STATES_DIR when the repos live elsewhere.
 const DEFAULT_STATES_DIR =
-  '/Users/can/Documents/GitHub-ILGTechnologies/ILG-EBAS-E-Bar/states';
+  '/Users/cankilic/Documents/GitHub-ILGTechnologies/ILG-EBAS-E-Bar/states';
 
 export const statesDir = (): string =>
   process.env.EBAR_STATES_DIR || DEFAULT_STATES_DIR;

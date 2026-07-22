@@ -609,6 +609,39 @@ const boolPlaceholder = (val: string | boolean | undefined): string => {
   return String(val || '');
 };
 
+// Optional string attr: emit when non-empty; when the user cleared a previously
+// non-empty value, drop the attr so the stale original spelling (already copied
+// in by mergeAttrs) doesn't resurface. Empty-string originals are kept verbatim.
+const setOptionalAttr = (
+  attrs: Record<string, unknown>,
+  original: Record<string, string> | undefined,
+  name: string,
+  value: string | undefined
+): void => {
+  if (value) {
+    attrs[`@_${name}`] = value;
+  } else if (original?.[name]) {
+    delete attrs[`@_${name}`];
+  }
+};
+
+// Boolean attr: keep the original spelling when the value is unchanged
+// (isamended="" stays ""), emit the corrected value otherwise
+const setBoolAttr = (
+  attrs: Record<string, unknown>,
+  original: Record<string, string> | undefined,
+  name: string,
+  value: boolean
+): void => {
+  const orig = original?.[name];
+  if (orig !== undefined) {
+    if ((orig === 'true') === value) return;
+    attrs[`@_${name}`] = value ? '__BOOL_TRUE__' : '__BOOL_FALSE__';
+  } else if (value) {
+    attrs[`@_${name}`] = '__BOOL_TRUE__';
+  }
+};
+
 // Override a numeric attribute only when the value actually changed.
 // Keeps original spellings like min="" (E-Bar treats it as 0) byte-identical.
 const setNumericAttr = (
@@ -626,7 +659,10 @@ const setNumericAttr = (
 const makeCdata = (text: string | undefined | null): OrderedNode[] => {
   const t = text || '';
   if (!t) return [];
-  return [{ '#cdata': [{ '#text': t }] }];
+  // "]]>" would terminate the CDATA section early and produce malformed XML;
+  // the standard fix is splitting into adjacent CDATA sections (parse rejoins them)
+  const safe = t.replace(/\]\]>/g, ']]]]><![CDATA[>');
+  return [{ '#cdata': [{ '#text': safe }] }];
 };
 
 // Build Description node
@@ -744,17 +780,21 @@ const buildQuestion = (question: FormQuestion): OrderedNode => {
     '@_comment': question.comment || '',
   });
 
-  if (question.maxlength) attrs['@_maxlength'] = String(question.maxlength);
-  if (question.option) attrs['@_option'] = question.option;
-  if (question.refname) attrs['@_refname'] = question.refname;
-  if (question.appType) attrs['@_app_type'] = question.appType;
-  if (question.appTypeTrigger) attrs['@_app_type_trigger'] = question.appTypeTrigger;
-  if (question.isAmended) attrs['@_isamended'] = '__BOOL_TRUE__';
-  if (question.validatorClass) attrs['@_validatorclass'] = question.validatorClass;
-  if (question.validationMessage) attrs['@_validationmessage'] = question.validationMessage;
-  if (question.ncbeName) attrs['@_ncbe_name'] = question.ncbeName;
-  if (question.ncbeCurrently) attrs['@_ncbe_currently'] = '__BOOL_TRUE__';
-  if (question.ilgName) attrs['@_ilg_name'] = question.ilgName;
+  if (question.maxlength) {
+    attrs['@_maxlength'] = String(question.maxlength);
+  } else if (parseIntOr(question._originalAttrs?.maxlength, 0) !== 0) {
+    delete attrs['@_maxlength'];
+  }
+  setOptionalAttr(attrs, question._originalAttrs, 'option', question.option);
+  setOptionalAttr(attrs, question._originalAttrs, 'refname', question.refname);
+  setOptionalAttr(attrs, question._originalAttrs, 'app_type', question.appType);
+  setOptionalAttr(attrs, question._originalAttrs, 'app_type_trigger', question.appTypeTrigger);
+  setBoolAttr(attrs, question._originalAttrs, 'isamended', question.isAmended);
+  setOptionalAttr(attrs, question._originalAttrs, 'validatorclass', question.validatorClass);
+  setOptionalAttr(attrs, question._originalAttrs, 'validationmessage', question.validationMessage);
+  setOptionalAttr(attrs, question._originalAttrs, 'ncbe_name', question.ncbeName);
+  setBoolAttr(attrs, question._originalAttrs, 'ncbe_currently', question.ncbeCurrently);
+  setOptionalAttr(attrs, question._originalAttrs, 'ilg_name', question.ilgName);
 
   // Build children in order
   const children: OrderedNode[] = [];
@@ -832,14 +872,12 @@ const buildNode = (node: FormNode): OrderedNode | null => {
       if (entity.showInBarAdmin !== undefined) {
         attrs['@_showinbaradmin'] = boolPlaceholder(entity.showInBarAdmin);
       }
-      if (entity.isAmended || entity._originalAttrs?.isamended !== undefined) {
-        attrs['@_isamended'] = boolPlaceholder(entity.isAmended);
-      }
-      if (entity.groupType) attrs['@_grouptype'] = entity.groupType;
-      if (entity.ncbeName) attrs['@_ncbe_name'] = entity.ncbeName;
-      if (entity.ncbeValue) attrs['@_ncbe_value'] = entity.ncbeValue;
-      if (entity.ilgName) attrs['@_ilg_name'] = entity.ilgName;
-      if (entity.ilgValue) attrs['@_ilg_value'] = entity.ilgValue;
+      setBoolAttr(attrs, entity._originalAttrs, 'isamended', entity.isAmended);
+      setOptionalAttr(attrs, entity._originalAttrs, 'grouptype', entity.groupType);
+      setOptionalAttr(attrs, entity._originalAttrs, 'ncbe_name', entity.ncbeName);
+      setOptionalAttr(attrs, entity._originalAttrs, 'ncbe_value', entity.ncbeValue);
+      setOptionalAttr(attrs, entity._originalAttrs, 'ilg_name', entity.ilgName);
+      setOptionalAttr(attrs, entity._originalAttrs, 'ilg_value', entity.ilgValue);
 
       const children: OrderedNode[] = [];
       for (const child of (entity.children || [])) {
@@ -943,8 +981,17 @@ const buildSubSection = (subsection: FormSubSection): OrderedNode => {
   if (subsection.showInBarAdmin !== undefined) {
     attrs['@_showinbaradmin'] = boolPlaceholder(subsection.showInBarAdmin);
   }
-  if (subsection.depends !== undefined) attrs['@_depends'] = subsection.depends;
-  if (subsection.condition !== undefined) attrs['@_condition'] = boolPlaceholder(subsection.condition);
+  // cleared depends/condition must not resurface from _originalAttrs
+  if (subsection.depends !== undefined) {
+    attrs['@_depends'] = subsection.depends;
+  } else if (subsection._originalAttrs?.depends !== undefined) {
+    delete attrs['@_depends'];
+  }
+  if (subsection.condition !== undefined) {
+    attrs['@_condition'] = boolPlaceholder(subsection.condition);
+  } else if (subsection._originalAttrs?.condition !== undefined) {
+    delete attrs['@_condition'];
+  }
   const children: OrderedNode[] = [];
   for (const child of (subsection.children || [])) {
     const built = buildNode(child);
@@ -977,6 +1024,15 @@ const fixBooleanPlaceholders = (xmlContent: string): string => {
     .replace(/__BOOL_FALSE__/g, 'false');
 };
 
+// Placeholder fix-ups run only OUTSIDE CDATA sections so user text that
+// happens to contain a literal token can never be corrupted. Bool fix runs
+// before the raw splice so preserved-verbatim subtrees are never touched.
+const postProcessPlaceholders = (xmlContent: string): string =>
+  xmlContent
+    .split(/(<!\[CDATA\[[\s\S]*?\]\]>)/)
+    .map((part, i) => (i % 2 === 1 ? part : spliceRawSubtrees(fixBooleanPlaceholders(part))))
+    .join('');
+
 // ============================================================================
 // PUBLIC BUILD FUNCTIONS
 // ============================================================================
@@ -1004,8 +1060,8 @@ export const buildXML = (form: FormQuestionnaire): string => {
     createOrderedNode('questionnaire', questionnaireAttrs, sectionNodes),
   ];
 
-  const xmlContent = spliceRawSubtrees(builder.build(xmlObj));
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${fixBooleanPlaceholders(xmlContent)}`;
+  const xmlContent = postProcessPlaceholders(builder.build(xmlObj));
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`;
 };
 
 // Create empty form
@@ -1085,8 +1141,8 @@ export const buildSubformXML = (form: FormSubform): string => {
     createOrderedNode('subform', subformAttrs, childNodes),
   ];
 
-  const xmlContent = spliceRawSubtrees(builder.build(xmlObj));
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${fixBooleanPlaceholders(xmlContent)}`;
+  const xmlContent = postProcessPlaceholders(builder.build(xmlObj));
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`;
 };
 
 // Create empty subform
