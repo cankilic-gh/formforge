@@ -4,6 +4,12 @@ import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
 import { parseAnyXML, buildAnyXML, createEmptyForm, createEmptySubform, detectXMLType } from '@/lib/xmlParser';
 import {
+  isFormDirty,
+  loadReloadForm,
+  resolveSavedBaselineAfterReload,
+  shouldContinueAfterSave,
+} from '@/lib/reloadSource';
+import {
   FileUp,
   FileDown,
   FilePlus,
@@ -63,11 +69,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   const {
     form,
     setForm,
+    reloadBaselineXml,
+    setReloadBaselineXml,
     selectedNodeId,
     undo,
     redo,
     history,
     historyIndex,
+    savedBaselineXml,
+    setSavedBaselineXml,
     deleteNode,
     findNodeById,
     isPreviewing,
@@ -77,12 +87,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   const { showAlert, showConfirm, showPrompt } = useModal();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [savedHistoryIndex, setSavedHistoryIndex] = useState(-1);
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false);
   const [xmlContent, setXmlContent] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const hasUnsavedChanges = form && historyIndex !== savedHistoryIndex;
+  const hasUnsavedChanges = isFormDirty(form, savedBaselineXml);
 
   // Warn before closing tab/browser with unsaved changes
   useEffect(() => {
@@ -115,10 +124,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   // File Management
   const handleNew = async () => {
     if (hasUnsavedChanges) {
-      const shouldSave = await showConfirm('Unsaved Changes', 'Do you want to save changes before creating a new form?');
-      if (shouldSave) {
-        await handleSave();
-      }
+      const saveRequested = await showConfirm('Unsaved Changes', 'You have unsaved changes. Do you want to save before creating a new form?');
+      if (!await shouldContinueAfterSave(saveRequested, handleSave)) return;
     }
 
     // Ask for form type
@@ -139,16 +146,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
     persistedFileHandle = null;
     persistedFileName = null;
-    setSavedHistoryIndex(-1);
-    setForm(isSubform ? createEmptySubform(title, suffix) : createEmptyForm(title, suffix));
+    setSavedBaselineXml(null);
+    const newForm = isSubform ? createEmptySubform(title, suffix) : createEmptyForm(title, suffix);
+    setReloadBaselineXml(buildAnyXML(newForm));
+    setForm(newForm);
   };
 
   const handleOpen = async () => {
     if (hasUnsavedChanges) {
-      const shouldSave = await showConfirm('Unsaved Changes', 'Do you want to save changes before opening another file?');
-      if (shouldSave) {
-        await handleSave();
-      }
+      const saveRequested = await showConfirm('Unsaved Changes', 'Do you want to save changes before opening another file?');
+      if (!await shouldContinueAfterSave(saveRequested, handleSave)) return;
     }
 
     // Try File System Access API first
@@ -174,8 +181,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         if (parsed) {
           persistedFileHandle = handle;
           persistedFileName = file.name;
+          setReloadBaselineXml(buildAnyXML(parsed));
           setForm(parsed);
-          setSavedHistoryIndex(0);
+          setSavedBaselineXml(buildAnyXML(parsed));
         } else {
           await showAlert('Error', 'Failed to parse XML file. Please check the file format.');
         }
@@ -208,8 +216,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       if (parsed) {
         persistedFileHandle = null; // No handle for legacy file input
         persistedFileName = file.name;
+        setReloadBaselineXml(buildAnyXML(parsed));
         setForm(parsed);
-        setSavedHistoryIndex(0);
+        setSavedBaselineXml(buildAnyXML(parsed));
       } else {
         await showAlert('Error', 'Failed to parse XML file. Please check the file format.');
       }
@@ -221,13 +230,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
   const handleReload = async () => {
     if (!form) return;
     const confirmed = await showConfirm('Reload Form', 'Reload form? All unsaved changes will be lost.');
-    if (confirmed && history.length > 0) {
-      setForm(history[0]);
+    if (!confirmed) return;
+
+    try {
+      const reloaded = await loadReloadForm(persistedFileHandle, reloadBaselineXml);
+      const baselineXml = buildAnyXML(reloaded);
+      setReloadBaselineXml(baselineXml);
+      setForm(reloaded);
+      setSavedBaselineXml(resolveSavedBaselineAfterReload(
+        savedBaselineXml,
+        persistedFileHandle !== null,
+        baselineXml
+      ));
+    } catch (err) {
+      console.error('Failed to reload form:', err);
+      await showAlert('Reload Failed', 'The source file could not be read or parsed. The current form was not changed.');
     }
   };
 
-  const handleSave = async () => {
-    if (!form) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!form) return false;
     const xml = buildAnyXML(form);
 
     // If we have an existing file handle, save directly to it
@@ -236,8 +258,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         const writable = await persistedFileHandle.createWritable();
         await writable.write(xml);
         await writable.close();
-        setSavedHistoryIndex(historyIndex);
-        return;
+        setReloadBaselineXml(xml);
+        setSavedBaselineXml(xml);
+        return true;
       } catch (err) {
         // Handle might be invalid, fall through to Save As
         console.error('Failed to save to existing file:', err);
@@ -246,11 +269,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     }
 
     // No existing handle, do Save As
-    await handleSaveAs();
+    return handleSaveAs();
   };
 
-  const handleSaveAs = async () => {
-    if (!form) return;
+  const handleSaveAs = async (): Promise<boolean> => {
+    if (!form) return false;
     const xml = buildAnyXML(form);
     const defaultName = persistedFileName || `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
 
@@ -269,10 +292,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         await writable.close();
         persistedFileHandle = handle;
         persistedFileName = handle.name;
-        setSavedHistoryIndex(historyIndex);
-        return;
+        setReloadBaselineXml(xml);
+        setSavedBaselineXml(xml);
+        return true;
       } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
+        if ((err as Error).name === 'AbortError') return false;
       }
     }
 
@@ -284,22 +308,23 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     a.download = defaultName;
     a.click();
     URL.revokeObjectURL(url);
-    setSavedHistoryIndex(historyIndex);
+    setReloadBaselineXml(xml);
+    setSavedBaselineXml(xml);
+    return true;
   };
 
   const handleClose = async () => {
     if (!form) return;
 
     if (hasUnsavedChanges) {
-      const shouldSave = await showConfirm('Unsaved Changes', 'Do you want to save changes before closing?');
-      if (shouldSave) {
-        await handleSave();
-      }
+      const saveRequested = await showConfirm('Unsaved Changes', 'Do you want to save changes before closing?');
+      if (!await shouldContinueAfterSave(saveRequested, handleSave)) return;
     }
 
     persistedFileHandle = null;
     persistedFileName = null;
-    setSavedHistoryIndex(-1);
+    setReloadBaselineXml(null);
+    setSavedBaselineXml(null);
     setForm(null);
   };
 

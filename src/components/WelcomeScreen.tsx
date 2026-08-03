@@ -2,12 +2,12 @@
 
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
-import { parseXML, createEmptyForm } from '@/lib/xmlParser';
+import { parseXML, buildAnyXML, createEmptyForm } from '@/lib/xmlParser';
 import { FileUp, Plus, Hammer, FileText, Layers, GitBranch, Calendar } from 'lucide-react';
 import { useRef } from 'react';
 
 export const WelcomeScreen: React.FC = () => {
-  const { setForm } = useFormStore();
+  const { setForm, setReloadBaselineXml, setSavedBaselineXml } = useFormStore();
   const { showPrompt, showAlert } = useModal();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -16,7 +16,10 @@ export const WelcomeScreen: React.FC = () => {
     if (title) {
       const suffix = await showPrompt('Form Suffix', 'Enter 5-digit suffix number for IDs:', '00001');
       if (suffix) {
-        setForm(createEmptyForm(title, suffix));
+        const form = createEmptyForm(title, suffix);
+        setReloadBaselineXml(buildAnyXML(form));
+        setSavedBaselineXml(null);
+        setForm(form);
       }
     }
   };
@@ -34,7 +37,9 @@ export const WelcomeScreen: React.FC = () => {
       const xml = event.target?.result as string;
       const parsed = parseXML(xml);
       if (parsed) {
+        setReloadBaselineXml(buildAnyXML(parsed));
         setForm(parsed);
+        setSavedBaselineXml(buildAnyXML(parsed));
       } else {
         await showAlert('Error', 'Failed to parse XML file. Please check the format.');
       }

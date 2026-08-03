@@ -23,10 +23,12 @@ import {
   QuestionType,
   ProfileReferenceField,
 } from '@/types/form';
+import { buildAnyXML } from '@/lib/xmlParser';
 
 interface FormState {
   // Current form (can be questionnaire or subform)
   form: FormRoot | null;
+  reloadBaselineXml: string | null;
 
   // Selection state
   selectedNodeId: string | null;
@@ -39,9 +41,12 @@ interface FormState {
   // History for undo/redo
   history: FormRoot[];
   historyIndex: number;
+  savedBaselineXml: string | null;
 
   // Actions
   setForm: (form: FormRoot | null) => void;
+  setReloadBaselineXml: (xml: string | null) => void;
+  setSavedBaselineXml: (xml: string | null) => void;
   selectNode: (nodeId: string | null) => void;
   toggleNodeExpanded: (nodeId: string) => void;
   expandAll: () => void;
@@ -175,6 +180,20 @@ const remapSubtreeIds = (root: FormNode, nextIdFn: () => string): void => {
       }
     }
   });
+};
+
+export const safeSetSessionStorageItem = (
+  storage: Pick<Storage, 'setItem'>,
+  name: string,
+  value: unknown
+): boolean => {
+  try {
+    storage.setItem(name, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.error('Failed to persist FormForge session state:', error);
+    return false;
+  }
 };
 
 export const useFormStore = create<FormState>()(
@@ -351,20 +370,32 @@ export const useFormStore = create<FormState>()(
       return {
         // Initial state
         form: null,
+        reloadBaselineXml: null,
         selectedNodeId: null,
         expandedNodes: new Set<string>(),
         isPreviewing: false,
         isSidebarCollapsed: false,
         history: [],
         historyIndex: -1,
+        savedBaselineXml: null,
 
         // Basic setters
         setForm: (form) => {
-          set({ form, selectedNodeId: null });
-          if (form) {
-            get().saveToHistory();
+          if (!form) {
+            set({ form: null, selectedNodeId: null, history: [], historyIndex: -1 });
+            return;
           }
+
+          set({
+            form,
+            selectedNodeId: null,
+            history: [deepClone(form)],
+            historyIndex: 0,
+          });
         },
+
+        setReloadBaselineXml: (xml) => set({ reloadBaselineXml: xml }),
+        setSavedBaselineXml: (xml) => set({ savedBaselineXml: xml }),
 
         selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
@@ -1261,7 +1292,7 @@ export const useFormStore = create<FormState>()(
           return str ? JSON.parse(str) : null;
         },
         setItem: (name, value) => {
-          sessionStorage.setItem(name, JSON.stringify(value));
+          safeSetSessionStorageItem(sessionStorage, name, value);
         },
         removeItem: (name) => {
           sessionStorage.removeItem(name);
@@ -1269,16 +1300,25 @@ export const useFormStore = create<FormState>()(
       },
       partialize: (state: FormState) => ({
         form: state.form,
+        reloadBaselineXml: state.reloadBaselineXml,
+        savedBaselineXml: state.savedBaselineXml,
         expandedNodes: Array.from(state.expandedNodes),
       } as unknown as FormState),
       merge: (persisted, current) => {
         // current (defaults + actions) first, then restore persisted data fields -
         // the previous order let current's form:null clobber the persisted form
-        const p = persisted as { form?: FormRoot | null; expandedNodes?: string[] } | undefined;
+        const p = persisted as {
+          form?: FormRoot | null;
+          reloadBaselineXml?: string | null;
+          savedBaselineXml?: string | null;
+          expandedNodes?: string[];
+        } | undefined;
         const restoredForm = p?.form ?? null;
         return {
           ...current,
           form: restoredForm,
+          reloadBaselineXml: p?.reloadBaselineXml ?? (restoredForm ? buildAnyXML(restoredForm) : null),
+          savedBaselineXml: p?.savedBaselineXml ?? null,
           expandedNodes: new Set(p?.expandedNodes || []),
           // reseed history so undo/reload work after a page refresh
           history: restoredForm ? [deepClone(restoredForm)] : [],
