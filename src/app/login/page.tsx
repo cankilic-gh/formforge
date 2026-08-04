@@ -1,40 +1,36 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, FormEvent } from 'react';
 
-const AUTH_KEY = 'formforge_auth';
-const VALID_USER = 'admin';
-const VALID_PASS = 'televole';
-
-export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    const auth = localStorage.getItem(AUTH_KEY);
-    setIsAuthenticated(auth === 'true');
-  }, []);
-
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (username === VALID_USER && password === VALID_PASS) {
-      localStorage.setItem(AUTH_KEY, 'true');
-      setIsAuthenticated(true);
-      setError('');
-    } else {
-      setError('Invalid credentials');
+    setSubmitting(true);
+    setError('');
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (res.ok) {
+        // full navigation so the middleware sees the fresh session cookie
+        window.location.href = '/';
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      setError(data?.error || 'Login failed');
+    } catch {
+      setError('Network error');
+    } finally {
+      setSubmitting(false);
     }
   };
-
-  if (isAuthenticated === null) {
-    return null;
-  }
-
-  if (isAuthenticated) {
-    return <>{children}</>;
-  }
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/95 backdrop-blur-sm">
@@ -65,12 +61,13 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
           <button
             type="submit"
-            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-colors"
+            disabled={submitting}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-semibold rounded-lg transition-colors"
           >
-            Login
+            {submitting ? 'Signing in...' : 'Login'}
           </button>
         </form>
       </div>
     </div>
   );
-};
+}
