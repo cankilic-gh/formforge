@@ -271,6 +271,16 @@ export interface BaseNode {
   _originalAttrs?: Record<string, string>; // Preserve original XML attributes
 }
 
+// Formatting the source file used (line endings, indent unit) — detected at
+// parse time and reapplied at build time so round-tripping a file authored
+// outside FormForge (most of the real corpus uses CRLF + tabs) doesn't turn
+// every unchanged line into a git diff. Absent on freshly-created forms,
+// which use FormForge's own defaults (LF, 4-space indent).
+export interface SourceFormat {
+  lineEnding: '\n' | '\r\n';
+  indent: string;
+}
+
 // Option (for radio/select)
 export interface FormOption extends BaseNode {
   nodeType: 'option';
@@ -449,6 +459,7 @@ export interface FormQuestionnaire extends BaseNode {
   suffix: string;
   nextId: number;
   children: FormNode[];
+  _sourceFormat?: SourceFormat;
 }
 
 // Subform (Root for subforms - no sections, directly contains entities)
@@ -458,6 +469,7 @@ export interface FormSubform extends BaseNode {
   suffix: string;
   nextId: number;
   children: FormNode[]; // Contains entities directly, along with other nodes
+  _sourceFormat?: SourceFormat;
 }
 
 // Union type for all form nodes

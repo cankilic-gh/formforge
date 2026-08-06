@@ -9,16 +9,19 @@ import { Toolbar } from '@/components/Toolbar';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { FormPreview } from '@/components/FormPreview';
 import { SmartFormGenerator } from '@/components/SmartFormGenerator';
+import { AiFixModal } from '@/components/AiFixModal';
 import { ValidationStatus } from '@/components/ValidationStatus';
 
 export default function Home() {
   const { form, isPreviewing } = useFormStore();
   const [showGenerator, setShowGenerator] = useState(false);
+  const [showAiFix, setShowAiFix] = useState(false);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <Toolbar onGenerateClick={() => setShowGenerator(true)} />
+      <Toolbar onGenerateClick={() => setShowGenerator(true)} onAiFixClick={() => setShowAiFix(true)} />
       <SmartFormGenerator isOpen={showGenerator} onClose={() => setShowGenerator(false)} />
+      <AiFixModal isOpen={showAiFix} onClose={() => setShowAiFix(false)} />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Hide sidebar during preview */}

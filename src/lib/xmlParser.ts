@@ -1,5 +1,6 @@
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import {
+  SourceFormat,
   FormQuestionnaire,
   FormSubform,
   FormSection,
@@ -40,7 +41,9 @@ const parserOptions = {
   preserveOrder: true,
 };
 
-// Builder options with preserveOrder
+// Builder options with preserveOrder. `indentBy` is FormForge's own default
+// (4 spaces) — used for freshly-created forms and as the fallback whenever a
+// parsed form carries no `_sourceFormat` (see detectSourceFormat below).
 const builderOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -50,6 +53,31 @@ const builderOptions = {
   indentBy: '    ',
   suppressEmptyNode: false,
   preserveOrder: true,
+};
+
+// Detects the line-ending and per-level indent unit of a source XML file so
+// buildXML/buildSubformXML can reproduce them. Without this, fast-xml-parser
+// always emits LF + 4-space indent regardless of the source — and the real
+// E-Bar corpus is ~97% CRLF (many also tab-indented), so every round-trip of
+// an untouched file would otherwise turn every single line into a git diff
+// even when nothing semantic changed.
+const detectSourceFormat = (xml: string): SourceFormat => {
+  const lineEnding: SourceFormat['lineEnding'] = xml.includes('\r\n') ? '\r\n' : '\n';
+  // First indented element line in document order is always a depth-1 child
+  // (its ancestors, if any, appear earlier in the text) — its leading
+  // whitespace run is exactly one indent level for consistently-formatted XML.
+  const match = xml.match(/\r?\n([ \t]+)</);
+  const indent = match ? match[1] : '    ';
+  return { lineEnding, indent };
+};
+
+// Reapplies a detected line ending to freshly-built XML. Only bare `\n` (not
+// already part of a `\r\n` pair) is converted — CDATA text content copied
+// verbatim from the source may already contain literal `\r\n` sequences, and
+// converting those too would double up the `\r`.
+const applySourceLineEnding = (xml: string, sourceFormat?: SourceFormat): string => {
+  if (!sourceFormat || sourceFormat.lineEnding === '\n') return xml;
+  return xml.replace(/(?<!\r)\n/g, '\r\n');
 };
 
 // Generate unique ID (fallback)
@@ -544,6 +572,7 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
       nextId: parseInt(String(attrs['@_nextid'] || '1'), 10) || 1,
       children: parseChildren(children),
       _originalAttrs: extractOriginalAttrs(attrs),
+      _sourceFormat: detectSourceFormat(xmlString),
     };
 
     return form;
@@ -1040,7 +1069,7 @@ const postProcessPlaceholders = (xmlContent: string): string =>
 // Build XML from form (questionnaire)
 export const buildXML = (form: FormQuestionnaire): string => {
   resetRawSubtrees();
-  const builder = new XMLBuilder(builderOptions);
+  const builder = new XMLBuilder({ ...builderOptions, indentBy: form._sourceFormat?.indent ?? builderOptions.indentBy });
 
   // Build questionnaire
   const questionnaireAttrs = mergeAttrs(form._originalAttrs, {
@@ -1061,7 +1090,7 @@ export const buildXML = (form: FormQuestionnaire): string => {
   ];
 
   const xmlContent = postProcessPlaceholders(builder.build(xmlObj));
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`;
+  return applySourceLineEnding(`<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`, form._sourceFormat);
 };
 
 // Create empty form
@@ -1108,6 +1137,7 @@ export const parseSubformXML = (xmlString: string): FormSubform | null => {
       nextId: parseInt(String(attrs['@_nextid'] || '1'), 10) || 1,
       children: parseChildren(children),
       _originalAttrs: extractOriginalAttrs(attrs),
+      _sourceFormat: detectSourceFormat(xmlString),
     };
 
     return form;
@@ -1120,7 +1150,7 @@ export const parseSubformXML = (xmlString: string): FormSubform | null => {
 // Build Subform XML - now uses shared helpers
 export const buildSubformXML = (form: FormSubform): string => {
   resetRawSubtrees();
-  const builder = new XMLBuilder(builderOptions);
+  const builder = new XMLBuilder({ ...builderOptions, indentBy: form._sourceFormat?.indent ?? builderOptions.indentBy });
 
   // Build subform
   const subformAttrs = mergeAttrs(form._originalAttrs, {
@@ -1142,7 +1172,7 @@ export const buildSubformXML = (form: FormSubform): string => {
   ];
 
   const xmlContent = postProcessPlaceholders(builder.build(xmlObj));
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`;
+  return applySourceLineEnding(`<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`, form._sourceFormat);
 };
 
 // Create empty subform

@@ -307,6 +307,7 @@ const SortableTreeNode: React.FC<TreeNodeProps> = ({ node, depth, parentId, drop
 
       {/* Node row */}
       <div
+        data-node-id={node.id}
         className={`relative flex items-center gap-1 py-1.5 px-2 cursor-pointer rounded-lg group border-l-2 transition-all duration-150 ${
           isSelected ? 'bg-cyan-50 border-l-cyan-500 shadow-sm' : 'border-l-transparent hover:bg-slate-50'
         } ${isDragging ? 'opacity-30' : ''} ${isDropInside ? 'ring-2 ring-cyan-500 ring-inset bg-cyan-50/50' : ''}`}
@@ -397,7 +398,18 @@ const DragOverlayNode: React.FC<{ node: FormNode }> = ({ node }) => (
 // ─── FormTree ────────────────────────────────────────────────
 
 export const FormTree: React.FC = () => {
-  const { form, copyNode, pasteNode, canPaste, selectNode, moveNode, findNodeById, findParentNode, expandedNodes } = useFormStore();
+  const { form, copyNode, pasteNode, canPaste, selectNode, moveNode, findNodeById, findParentNode, expandedNodes, selectedNodeId } = useFormStore();
+
+  // When selection changes (e.g. jumping from the validation panel), scroll the
+  // selected row into view. Runs after the tree re-renders with ancestors expanded.
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-node-id="${CSS.escape(selectedNodeId)}"]`);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [selectedNodeId, expandedNodes]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeNode, setActiveNode] = useState<FormNode | null>(null);

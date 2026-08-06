@@ -27,6 +27,7 @@ import {
   Eye,
   EyeOff,
   Wand2,
+  Sparkles,
   Code,
   Check,
   FlaskConical,
@@ -63,9 +64,10 @@ const LastUpdated: React.FC = () => {
 
 interface ToolbarProps {
   onGenerateClick?: () => void;
+  onAiFixClick?: () => void;
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
+export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick, onAiFixClick }) => {
   const {
     form,
     setForm,
@@ -254,6 +256,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
     // If we have an existing file handle, save directly to it
     if (persistedFileHandle) {
+      // Keep a reference for Save As's startIn hint below — the handle is
+      // about to be nulled out on failure, but it still tells the picker
+      // which folder the file lives in even though we can no longer write
+      // through it directly (e.g. a revoked permission).
+      const previousHandle = persistedFileHandle;
       try {
         const writable = await persistedFileHandle.createWritable();
         await writable.write(xml);
@@ -262,9 +269,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         setSavedBaselineXml(xml);
         return true;
       } catch (err) {
-        // Handle might be invalid, fall through to Save As
+        // Handle might be invalid (e.g. permission revoked since Open) —
+        // don't silently degrade to a different save location without
+        // saying so, or the user will end up saving a fresh copy to
+        // Downloads/Desktop instead of updating the file they opened.
         console.error('Failed to save to existing file:', err);
         persistedFileHandle = null;
+        await showAlert(
+          'Could Not Save In Place',
+          "Couldn't write to the file you opened (its saved permission may have expired). " +
+            "You'll be asked to choose where to save next — pick the SAME file to replace it."
+        );
+        return handleSaveAs(previousHandle);
       }
     }
 
@@ -272,7 +288,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     return handleSaveAs();
   };
 
-  const handleSaveAs = async (): Promise<boolean> => {
+  const handleSaveAs = async (startInHandle?: FileSystemFileHandle): Promise<boolean> => {
     if (!form) return false;
     const xml = buildAnyXML(form);
     const defaultName = persistedFileName || `${form.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.xml`;
@@ -280,8 +296,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
     // Use File System Access API if available
     if ('showSaveFilePicker' in window) {
       try {
-        const handle = await (window as typeof window & { showSaveFilePicker: (options?: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+        const handle = await (window as typeof window & {
+          showSaveFilePicker: (options?: object) => Promise<FileSystemFileHandle>;
+        }).showSaveFilePicker({
           suggestedName: defaultName,
+          // Opens in the same folder as the file we already had a handle
+          // for, instead of wherever the browser last remembered (usually
+          // Downloads/Desktop) — this is what makes "Save" land back in the
+          // original folder instead of somewhere else.
+          ...(startInHandle || persistedFileHandle ? { startIn: startInHandle ?? persistedFileHandle } : {}),
           types: [{
             description: 'XML Files',
             accept: { 'application/xml': ['.xml'] },
@@ -298,6 +321,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
       } catch (err) {
         if ((err as Error).name === 'AbortError') return false;
       }
+    } else {
+      // This browser has no File System Access API at all (Safari, Firefox)
+      // — there is no way to write back to the original file. Say so before
+      // downloading, or "saved" silently means "a new copy landed in
+      // Downloads and the real file was never touched."
+      await showAlert(
+        'Direct Save Not Supported In This Browser',
+        `Your browser can't save back to the original file — a new copy ("${defaultName}") will download to your ` +
+          'Downloads folder instead. Move/replace it into the original folder yourself, or use Chrome or Edge for ' +
+          'in-place saving.'
+      );
     }
 
     // Fallback for browsers without File System Access API
@@ -393,18 +427,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
 
   return (
     <header className="border-b border-slate-200 bg-white shadow-sm">
-      {/* Toolbar: each column contains icons (top) + group label (bottom), ensuring structural alignment */}
-      <div className="flex items-stretch px-2 gap-1">
-        {/* Logo column — same two-row height as groups */}
-        <div className="w-56 flex flex-col border-r border-slate-200">
-          <div className="h-12 flex items-center gap-2 px-3">
-            <Hammer className="w-5 h-5 text-cyan-600" />
-            <div className="flex flex-col">
-              <span className="font-bold text-slate-800 text-sm tracking-wide leading-none">FormForge</span>
-              <LastUpdated />
-            </div>
+      {/* Main toolbar */}
+      <div className="h-12 flex items-center px-2 gap-1">
+        {/* Logo - matches sidebar width (w-56 = 224px) */}
+        <div className="w-56 flex items-center gap-2 px-3 border-r border-slate-200">
+          <Hammer className="w-5 h-5 text-cyan-600" />
+          <div className="flex flex-col">
+            <span className="font-bold text-slate-800 text-sm tracking-wide leading-none">FormForge</span>
+            <LastUpdated />
           </div>
-          <div className="h-5 bg-slate-50 border-t border-slate-100" />
         </div>
 
         {/* File Management */}
@@ -413,11 +444,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
           <ToolbarButton icon={FileUp} label="Open" onClick={handleOpen} />
           <ToolbarButton icon={RefreshCw} label="Reload" onClick={handleReload} disabled={!form} />
           <ToolbarButton icon={Save} label="Save" onClick={handleSave} disabled={!form} warning={!!hasUnsavedChanges} />
-          <ToolbarButton icon={FileDown} label="Save As" onClick={handleSaveAs} disabled={!form} />
+          <ToolbarButton icon={FileDown} label="Save As" onClick={() => handleSaveAs()} disabled={!form} />
           <ToolbarButton icon={X} label="Close" onClick={handleClose} disabled={!form} />
         </ToolbarGroup>
 
-        <ToolbarSeparator />
+        <div className="w-px h-6 bg-slate-200 mx-1" />
 
         {/* Edit */}
         <ToolbarGroup label="Edit">
@@ -430,23 +461,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
           <ToolbarButton icon={Hash} label="Regenerate Id's" onClick={handleRegenerateIds} disabled={!form} />
         </ToolbarGroup>
 
-        <ToolbarSeparator />
+        <div className="w-px h-6 bg-slate-200 mx-1" />
 
         {/* Tools */}
-        <ToolbarGroup label="Tools" labelClassName="text-cyan-600 font-medium">
+        <ToolbarGroup label="Tools">
           <ToolbarButton
             icon={Wand2}
             label="Generate"
             onClick={onGenerateClick || (() => {})}
             disabled={!form}
           />
+          <ToolbarButton
+            icon={Sparkles}
+            label="AI Fix"
+            onClick={onAiFixClick || (() => {})}
+            disabled={!form}
+          />
         </ToolbarGroup>
 
         {/* Spacer */}
-        <div className="flex-1 flex flex-col">
-          <div className="h-12" />
-          <div className="h-5 bg-slate-50 border-t border-slate-100" />
-        </div>
+        <div className="flex-1" />
 
         {/* View */}
         <ToolbarGroup label="View">
@@ -513,29 +547,23 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick }) => {
         </div>
       )}
 
+      {/* Section labels */}
+      <div className="h-5 flex items-center px-2 text-[10px] text-slate-400 border-t border-slate-100 bg-slate-50">
+        <div className="w-56" /> {/* Logo space - matches sidebar width */}
+        <span className="px-2">File Management</span>
+        <span className="px-8">Edit</span>
+        <span className="px-2 text-cyan-600 font-medium">Tools</span>
+        <div className="flex-1" />
+        <span className="px-2">View</span>
+      </div>
     </header>
   );
 };
 
-// Toolbar Group — flex-col so the label is structurally coupled to its icon row
-const ToolbarGroup: React.FC<{ label: string; labelClassName?: string; children: React.ReactNode }> = ({ label, labelClassName, children }) => (
-  <div className="flex flex-col">
-    <div className="h-12 flex items-center gap-0.5">
-      {children}
-    </div>
-    <div className={`h-5 flex items-center justify-center bg-slate-50 border-t border-slate-100 text-[10px] ${labelClassName ?? 'text-slate-400'}`}>
-      <span>{label}</span>
-    </div>
-  </div>
-);
-
-// Toolbar Separator — two-row column matching ToolbarGroup height
-const ToolbarSeparator: React.FC = () => (
-  <div className="flex flex-col">
-    <div className="h-12 flex items-center px-1">
-      <div className="w-px h-6 bg-slate-200" />
-    </div>
-    <div className="h-5 bg-slate-50 border-t border-slate-100 px-1" />
+// Toolbar Group
+const ToolbarGroup: React.FC<{ label: string; children: React.ReactNode }> = ({ children }) => (
+  <div className="flex items-center gap-0.5">
+    {children}
   </div>
 );
 
