@@ -48,6 +48,10 @@ interface FormState {
   setReloadBaselineXml: (xml: string | null) => void;
   setSavedBaselineXml: (xml: string | null) => void;
   selectNode: (nodeId: string | null) => void;
+  // Select a node AND expand its ancestors so it is visible in the tree.
+  // If the node is one the tree hides (option/reference/answer), reveal and
+  // select its nearest visible ancestor (e.g. the containing question) instead.
+  revealNode: (nodeId: string) => void;
   toggleNodeExpanded: (nodeId: string) => void;
   expandAll: () => void;
   collapseAll: () => void;
@@ -418,6 +422,50 @@ export const useFormStore = create<FormState>()(
 
         collapseAll: () => {
           set({ expandedNodes: new Set() });
+        },
+
+        revealNode: (nodeId) => {
+          const form = get().form;
+          if (!form) {
+            set({ selectedNodeId: nodeId });
+            return;
+          }
+          const target = findNodeRecursive(form, nodeId);
+          if (!target) {
+            set({ selectedNodeId: nodeId });
+            return;
+          }
+          // The tree does not render these node types; climb to the nearest
+          // ancestor it does render (an option's containing question, etc.).
+          const hiddenTypes = new Set(['option', 'reference', 'answer']);
+          let revealId = nodeId;
+          let cursor: FormNode | null = target;
+          while (cursor && hiddenTypes.has(cursor.nodeType)) {
+            const parent = findParentRecursive(form, cursor.id);
+            if (!parent) break;
+            revealId = parent.id;
+            cursor = parent;
+          }
+          // Collect the ancestor chain of revealId so every container above it
+          // gets expanded (otherwise the row stays hidden inside a closed parent).
+          const ancestors: string[] = [];
+          const findPath = (node: FormNode, targetId: string): boolean => {
+            if (node.id === targetId) return true;
+            if ('children' in node && Array.isArray(node.children)) {
+              for (const child of node.children) {
+                if (findPath(child as FormNode, targetId)) {
+                  ancestors.push(node.id);
+                  return true;
+                }
+              }
+            }
+            return false;
+          };
+          findPath(form, revealId);
+          const expanded = new Set(get().expandedNodes);
+          ancestors.forEach((id) => expanded.add(id));
+          expanded.add(revealId); // open the target container too, if it has children
+          set({ expandedNodes: expanded, selectedNodeId: revealId });
         },
 
         // Form mutations
