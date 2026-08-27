@@ -32,7 +32,7 @@ describe('fixture round-trip (always runs)', () => {
     test(`${file}: rebuild is idempotent and leaks no placeholders`, () => {
       const form = parseAnyXML(xml)!;
       const once = buildAnyXML(form);
-      expect(once).not.toMatch(/__BOOL_(TRUE|FALSE)__|__FFRAW_\d+__/);
+      expect(once).not.toMatch(/__BOOL_(TRUE|FALSE)__|__FFRAW_\d+__|__FFTXT_\d+__|__ffclose/);
       const reparsed = parseAnyXML(once);
       expect(reparsed).not.toBeNull();
       expect(buildAnyXML(reparsed!)).toBe(once);
