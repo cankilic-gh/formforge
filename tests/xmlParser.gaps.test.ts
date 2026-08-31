@@ -146,6 +146,33 @@ describe('P0 round-trip fidelity', () => {
     expect(out).toMatch(/<entity[^>]*nextorder="3"/);
   });
 
+  test('addmore entity with no order/nextorder in source stays without them on round-trip', () => {
+    // Real regression: a real GA corpus entity (characterandfitness.xml,
+    // id 182803001) is type="addmore" but predates order/nextorder bookkeeping
+    // attrs. buildXML was forcing them onto every addmore entity regardless of
+    // source, turning an untouched round-trip of that file into a spurious diff.
+    const xml = wrap(`<entity id="4999" type="addmore" title="Driver License" min="" max="" grouptype=""></entity>`);
+    const out = roundTrip(xml);
+    expect(out).not.toMatch(/<entity[^>]*order=/);
+    expect(out).not.toMatch(/<entity[^>]*nextorder=/);
+  });
+
+  test('a brand new addmore entity (no _originalAttrs) still gets order/nextorder bookkeeping attrs', () => {
+    // The UI's addEntity action creates fresh addmore entities with
+    // entityOrder: 0, nextOrder: 1 and no _originalAttrs - those must still
+    // serialize the bookkeeping attrs E-Bar needs, unlike a legacy source
+    // entity that simply never had them (previous test).
+    const xml = wrap(`<entity id="4999" type="single" title="E" min="0" max="0"></entity>`);
+    const form = parseXML(xml)!;
+    const ss = firstSubsection(form);
+    const entity = ss.children[0] as FormEntity;
+    delete entity._originalAttrs;
+    entity.type = 'addmore';
+    const out = buildXML(form);
+    expect(out).toMatch(/<entity[^>]*order="0"/);
+    expect(out).toMatch(/<entity[^>]*nextorder="1"/);
+  });
+
   test('newly toggled showinbaradmin on entity is serialized', () => {
     const xml = wrap(`<entity id="4999" type="single" title="E" min="0" max="0" order="0" nextorder="1"></entity>`);
     const form = parseXML(xml)!;

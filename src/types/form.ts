@@ -263,12 +263,51 @@ export const PROFILE_REFERENCE_FIELDS: { value: ProfileReferenceField; label: st
   { value: 'today', label: 'Today\'s Date', category: 'Special' },
 ];
 
+// How ONE text-bearing element laid its payload out in the source file.
+//
+// Captured per node, not per file. A whole-file majority vote is not enough:
+// 34 files in the real E-Bar corpus mix both conventions inside a single
+// document (va/xml/forms/bar-exam.xml has 4 glued CDATA leaves among 125
+// own-line ones, wa/xml/forms/characterandfitness-rule.xml has 1 among 1342),
+// so any file-wide boolean is guaranteed to rewrite the minority on every
+// save. Absent on freshly-created nodes, which fall back to the file's
+// dominant convention (see SourceFormat.cdataOwnLine / cdataInlineClosing).
+export interface TextLayout {
+  /** the payload was wrapped in <![CDATA[...]]> rather than written as bare text */
+  cdata: boolean;
+  /** the payload started on its own line below the opening tag */
+  openOwnLine: boolean;
+  /** the closing tag sat on its own line below the payload */
+  closeOwnLine: boolean;
+}
+
 // Base Node Interface
 export interface BaseNode {
   id: string;
   nodeType: string;
   order?: number;
-  _originalAttrs?: Record<string, string>; // Preserve original XML attributes
+  _originalAttrs?: Record<string, string>; // Preserve original XML attributes (decoded)
+  _textLayout?: TextLayout; // Per-node source layout of this element's text payload
+  /**
+   * Source spelling of any attribute the parser decoded, kept ONLY where it
+   * differs from the decoded value — i.e. where the source wrote an entity
+   * reference (title="Attorney&apos;s") rather than the literal character.
+   * Both spellings parse to the same string, so without this the build has to
+   * guess, and whichever it picks rewrites every file that chose the other.
+   * 33 real corpus files spell it &apos;; the rest use a literal apostrophe.
+   */
+  _rawAttrs?: Record<string, string>;
+  /** Same idea for a bare (non-CDATA) text payload. Absent when there is nothing to disambiguate. */
+  _rawText?: string;
+  /**
+   * The exact bytes that terminated this element's start tag, when they were
+   * anything other than a bare ">" — i.e. "/>" or " />" for a self-closing
+   * element, or " >" for a tag written with a space before the bracket.
+   * fast-xml-parser reports every spelling identically and its builder can only
+   * be told to self-close ALL empty elements or none, so the distinction has to
+   * be carried per node or every file that mixes spellings gets rewritten.
+   */
+  _startTagClose?: string;
 }
 
 // Formatting the source file used (line endings, indent unit) — detected at
@@ -279,6 +318,28 @@ export interface BaseNode {
 export interface SourceFormat {
   lineEnding: '\n' | '\r\n';
   indent: string;
+  /** The XML declaration's encoding attribute value, verbatim (e.g. "utf-8" or "UTF-8") */
+  encoding: string;
+  /** Whether the source file ended with a trailing newline after the root's closing tag */
+  trailingNewline: boolean;
+  /**
+   * The file's DOMINANT convention for where a CDATA leaf's closing tag sits:
+   * on the same line as "]]>" (true, e.g. most CT forms) or on its own line
+   * below (false, e.g. many VA forms).
+   *
+   * Existing nodes never consult this — they carry their own `_textLayout`.
+   * It only supplies the house style for nodes created fresh in the editor,
+   * so a new description in a VA-style file comes out looking like its
+   * neighbours instead of like FormForge's own default.
+   */
+  cdataInlineClosing: boolean;
+  /**
+   * The file's DOMINANT convention for whether a CDATA leaf's opening tag sits
+   * alone on its own line with the payload starting below (true, e.g. GA's
+   * characterandfitness.xml) or the payload is glued to it (false, the common
+   * case). Same role as cdataInlineClosing: a default for brand-new nodes only.
+   */
+  cdataOwnLine: boolean;
 }
 
 // Option (for radio/select)
@@ -327,7 +388,10 @@ export interface FormValidator extends BaseNode {
 export interface FormUnknown extends BaseNode {
   nodeType: 'unknown';
   tagName: string;
+  /** The preserved subtree, re-emitted verbatim so nothing is ever silently lost */
   raw: unknown;
+  /** True when `raw` holds undecoded source bytes and must not be re-escaped */
+  rawIsVerbatim?: boolean;
 }
 
 // Reference (for profilereference)

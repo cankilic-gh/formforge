@@ -1,6 +1,7 @@
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import {
   SourceFormat,
+  TextLayout,
   FormQuestionnaire,
   FormSubform,
   FormSection,
@@ -44,6 +45,12 @@ const parserOptions = {
 // Builder options with preserveOrder. `indentBy` is FormForge's own default
 // (4 spaces) — used for freshly-created forms and as the fallback whenever a
 // parsed form carries no `_sourceFormat` (see detectSourceFormat below).
+// `processEntities: false` hands escaping to us. fast-xml-parser's own escaper
+// is not source-aware: it rewrites every literal apostrophe to "&apos;" and
+// re-escapes the "&" of character references the parser never decoded, turning
+// title="bullet &#149;" into title="bullet &amp;#149;". Both are byte drift on
+// files nobody edited, and the second one changes what E-Bar renders. See
+// escapeAttrValue / attrSpelling.
 const builderOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -53,6 +60,53 @@ const builderOptions = {
   indentBy: '    ',
   suppressEmptyNode: false,
   preserveOrder: true,
+  processEntities: false,
+};
+
+// The five entity references fast-xml-parser decodes on the way in (numeric and
+// HTML character references such as &#149; or &nbsp; are deliberately left
+// alone by it, and must therefore be left alone by us too).
+const XML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+// Exactly the inverse of what the parser did — one pass, so "&amp;lt;" decodes
+// to "&lt;" and not to "<".
+const decodeXmlEntities = (value: string): string =>
+  value.replace(/&(amp|lt|gt|quot|apos);/g, (_match, name: string) => XML_ENTITIES[name]);
+
+// True when the string at `index` already begins a well-formed entity or
+// character reference, which must be passed through rather than re-escaped.
+const ENTITY_REFERENCE_AT = /^&(?:#\d+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);/;
+
+// Escapes "&" only where it is not already introducing a reference. This is what
+// keeps hand-authored payloads like "&#8226;" or "&nbsp;" intact while still
+// escaping a bare ampersand the user just typed.
+const escapeAmpersands = (value: string): string =>
+  value.replace(/&/g, (match, index: number) =>
+    ENTITY_REFERENCE_AT.test(value.slice(index)) ? match : '&amp;');
+
+// Attribute values are delimited with double quotes, so "<" and '"' must be
+// escaped and "'" and ">" must not — the corpus overwhelmingly writes literal
+// apostrophes, and a source that spelled one "&apos;" is restored verbatim from
+// _rawAttrs instead of being guessed at here.
+const escapeAttrValue = (value: string): string =>
+  escapeAmpersands(value).replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+// Bare (non-CDATA) text content. ">" is escaped here because a literal source
+// ">" round-trips through _rawText, and escaping is the safer default for text
+// the user just typed.
+const escapeTextValue = (value: string): string =>
+  escapeAmpersands(value).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// Picks an attribute's output spelling: the source's own bytes when the model
+// value is unchanged, a freshly-escaped value when the user actually edited it.
+const attrSpelling = (
+  rawAttrs: Record<string, string> | undefined,
+  name: string,
+  value: string
+): string => {
+  const raw = rawAttrs?.[name];
+  if (raw !== undefined && decodeXmlEntities(raw) === value) return raw;
+  return escapeAttrValue(value);
 };
 
 // Detects the line-ending and per-level indent unit of a source XML file so
@@ -68,7 +122,19 @@ const detectSourceFormat = (xml: string): SourceFormat => {
   // whitespace run is exactly one indent level for consistently-formatted XML.
   const match = xml.match(/\r?\n([ \t]+)</);
   const indent = match ? match[1] : '    ';
-  return { lineEnding, indent };
+  const encodingMatch = xml.match(/<\?xml[^>]*\bencoding="([^"]+)"/i);
+  const encoding = encodingMatch ? encodingMatch[1] : 'UTF-8';
+  const trailingNewline = xml.endsWith('\n');
+  // Majority vote across the whole file, used ONLY as the house style for nodes
+  // the user creates fresh in the editor. Every node parsed from this file
+  // carries its own `_textLayout` and ignores these — see detectTextLayout.
+  const inlineCount = (xml.match(/\]\]>[ \t]*<\//g) || []).length;
+  const multilineCount = (xml.match(/\]\]>[ \t]*\r?\n[ \t]*<\//g) || []).length;
+  const cdataInlineClosing = inlineCount >= multilineCount;
+  const openGluedCount = (xml.match(/>[ \t]*<!\[CDATA\[/g) || []).length;
+  const openOwnLineCount = (xml.match(/>[ \t]*\r?\n[ \t]*<!\[CDATA\[/g) || []).length;
+  const cdataOwnLine = openOwnLineCount > openGluedCount;
+  return { lineEnding, indent, encoding, trailingNewline, cdataInlineClosing, cdataOwnLine };
 };
 
 // Reapplies a detected line ending to freshly-built XML. Only bare `\n` (not
@@ -91,6 +157,164 @@ const generateId = (): string => {
 type OrderedNode = {
   ':@'?: Record<string, unknown>;
   [key: string]: unknown;
+};
+
+// ---------------------------------------------------------------------------
+// Raw (undecoded) companion tree
+//
+// The model wants decoded values — the editor should show "Attorney's", not
+// "Attorney&apos;s". The file wants its own bytes back. Those are different
+// strings, and no amount of re-escaping can recover which spelling the source
+// used, because both decode to the same thing.
+//
+// So the document is parsed a second time with entity decoding switched off.
+// Both parses see the same bytes with the same options, so the two trees have
+// identical shape and can be walked in lockstep; this map pairs them up. Only
+// the differences are then kept on the model (see rawAttrsOf / rawTextOf), so
+// the overwhelmingly common case — a value with no entities at all — costs
+// nothing.
+// ---------------------------------------------------------------------------
+const rawNodeIndex = new WeakMap<OrderedNode, OrderedNode>();
+
+const linkRawNodes = (decoded: OrderedNode[], raw: OrderedNode[]): void => {
+  // A shape mismatch should be impossible; if it ever happens, stop linking
+  // that branch and fall back to escaping, rather than pairing wrong nodes.
+  if (!Array.isArray(decoded) || !Array.isArray(raw) || decoded.length !== raw.length) return;
+  for (let i = 0; i < decoded.length; i++) {
+    const tag = getTagName(decoded[i]);
+    if (!tag || tag !== getTagName(raw[i])) continue;
+    rawNodeIndex.set(decoded[i], raw[i]);
+    linkRawNodes(decoded[i][tag] as OrderedNode[], raw[i][tag] as OrderedNode[]);
+  }
+};
+
+// Parses the raw companion tree and links it to the decoded one. Skipped
+// entirely when the document contains no "&", since without one no value can
+// possibly have an ambiguous spelling.
+const indexRawSpellings = (xmlString: string, decoded: OrderedNode[]): void => {
+  if (!xmlString.includes('&')) return;
+  try {
+    const raw = new XMLParser({ ...parserOptions, processEntities: false }).parse(xmlString) as OrderedNode[];
+    linkRawNodes(decoded, raw);
+  } catch {
+    // Best-effort: without the raw tree we simply fall back to escaping.
+  }
+};
+
+// The source spelling of every attribute the parser decoded, keyed by attribute
+// name — restricted to the ones that actually differ.
+const rawAttrsOf = (node: OrderedNode): Record<string, string> | undefined => {
+  const raw = rawNodeIndex.get(node);
+  if (!raw) return undefined;
+  const decodedAttrs = getAttrs(node);
+  const rawAttrs = getAttrs(raw);
+  let result: Record<string, string> | undefined;
+  for (const key of Object.keys(rawAttrs)) {
+    if (!key.startsWith('@_')) continue;
+    const rawValue = String(rawAttrs[key] ?? '');
+    if (rawValue === String(decodedAttrs[key] ?? '')) continue;
+    (result ||= {})[key.slice(2)] = rawValue;
+  }
+  return result;
+};
+
+// ---------------------------------------------------------------------------
+// Empty-tag spelling
+//
+// "<validator id='1'/>" and "<validator id='1'></validator>" parse to exactly
+// the same thing, and fast-xml-parser's builder can only be told to self-close
+// every empty element or none of them. The corpus mixes both spellings, so the
+// choice has to be recorded per element, from the source.
+//
+// The same question comes up for whitespace inside the tag: 22 corpus files
+// write `<subform ... version="1.0" >` with a space before the ">". Both are
+// the same fact — how did the source terminate this start tag — so one scan
+// records both.
+//
+// This walks the document once, skipping anything that is not a start tag, and
+// returns one entry per element in document order: the exact terminating bytes
+// ("/>", " />", " >") when they are anything other than a bare ">", undefined
+// otherwise. That order is the tree's pre-order, so the two can be zipped.
+// ---------------------------------------------------------------------------
+const scanStartTagClosings = (xml: string): (string | undefined)[] => {
+  const closings: (string | undefined)[] = [];
+  const end = xml.length;
+  let i = 0;
+  while (i < end) {
+    const open = xml.indexOf('<', i);
+    if (open === -1) break;
+    const skipTo = (marker: string, offset: number): number => {
+      const at = xml.indexOf(marker, open);
+      return at === -1 ? end : at + offset;
+    };
+    if (xml.startsWith('<!--', open)) { i = skipTo('-->', 3); continue; }
+    if (xml.startsWith('<![CDATA[', open)) { i = skipTo(']]>', 3); continue; }
+    if (xml.startsWith('<?', open)) { i = skipTo('?>', 2); continue; }
+    if (xml.startsWith('<!', open) || xml.startsWith('</', open)) { i = skipTo('>', 1); continue; }
+
+    // A start tag. Find its '>', ignoring any that sit inside a quoted value.
+    let cursor = open + 1;
+    let quote = '';
+    while (cursor < end) {
+      const ch = xml[cursor];
+      if (quote) { if (ch === quote) quote = ''; }
+      else if (ch === '"' || ch === "'") quote = ch;
+      else if (ch === '>') break;
+      cursor++;
+    }
+    if (cursor >= end) break;
+
+    let from = xml[cursor - 1] === '/' ? cursor - 1 : cursor;
+    while (from > open + 1 && (xml[from - 1] === ' ' || xml[from - 1] === '\t')) from--;
+    const closing = xml.slice(from, cursor + 1);
+    closings.push(closing === '>' ? undefined : closing);
+    i = cursor + 1;
+  }
+  return closings;
+};
+
+// Pre-order walk over element nodes only — the same order scanEmptyTagClosings
+// produces. fast-xml-parser reports the XML declaration as a "?xml" node and
+// would otherwise put the two sequences one apart for every single file.
+const isElementTag = (tag: string | null): tag is string =>
+  tag !== null && !tag.startsWith('?') && !tag.startsWith('!');
+
+const forEachElement = (nodes: OrderedNode[], visit: (node: OrderedNode) => void): void => {
+  if (!Array.isArray(nodes)) return;
+  for (const node of nodes) {
+    const tag = getTagName(node);
+    if (!isElementTag(tag)) continue;
+    visit(node);
+    forEachElement(node[tag] as OrderedNode[], visit);
+  }
+};
+
+const startTagCloseIndex = new WeakMap<OrderedNode, string>();
+
+const indexStartTagClosings = (xmlString: string, parsed: OrderedNode[]): void => {
+  const closings = scanStartTagClosings(xmlString);
+  const elements: OrderedNode[] = [];
+  forEachElement(parsed, node => elements.push(node));
+  // A mismatch means the scan and the parse disagree about what an element is;
+  // rather than pair the wrong nodes, record nothing and keep today's spelling.
+  if (elements.length !== closings.length) return;
+  elements.forEach((node, index) => {
+    const closing = closings[index];
+    if (closing) startTagCloseIndex.set(node, closing);
+  });
+};
+
+// The source spelling of a bare text payload, when it differs from the decoded
+// one. CDATA is never entity-decoded, so this only ever fires for bare text.
+const rawTextOf = (node: OrderedNode, decodedText: string): string | undefined => {
+  // Fall back to the node itself when there is no raw companion (a document
+  // with no "&" in it): the whitespace still has to be preserved even when
+  // there are no entities to disambiguate.
+  const source = rawNodeIndex.get(node) ?? node;
+  const tag = getTagName(source);
+  if (!isElementTag(tag)) return undefined;
+  const rawText = collectPayload(source[tag] as OrderedNode[], false);
+  return rawText === decodedText ? undefined : rawText;
 };
 
 // parseInt that does not fall into the ||-falsy trap (nextorder="0" must stay 0)
@@ -128,8 +352,11 @@ const extractText = (value: unknown): string => {
   return '';
 };
 
-// Builder used to reconstruct raw inline XML (no re-formatting)
-const innerXmlBuilder = () => new XMLBuilder({
+// Builder used to reconstruct raw inline XML (no re-formatting).
+// `processEntities: false` for the verbatim path: the subtree it serialises was
+// parsed WITHOUT entity decoding, so its strings are already source bytes and
+// re-escaping them would double up every "&".
+const innerXmlBuilder = (processEntities = true) => new XMLBuilder({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
@@ -137,6 +364,7 @@ const innerXmlBuilder = () => new XMLBuilder({
   format: false,
   suppressEmptyNode: false,
   preserveOrder: true,
+  processEntities,
 });
 
 // True when the ordered children contain real element nodes (mixed content)
@@ -148,7 +376,11 @@ const hasElementChildren = (children: OrderedNode[]): boolean => {
 // Get text content from ordered node array.
 // Pure text/CDATA content is concatenated; mixed content (raw inline HTML like
 // "Hello <strong>world</strong>") is reconstructed verbatim so no markup is lost.
-const getTextFromOrdered = (children: OrderedNode[]): string => {
+// `trimBareText` is what separates the model's view from the file's view: the
+// editor wants "Full Name", the file may have written "Full Name " with a
+// trailing space that has to come back. Both callers share the loop so the two
+// can never drift apart.
+const collectPayload = (children: OrderedNode[], trimBareText: boolean): string => {
   if (!children || !Array.isArray(children)) return '';
 
   if (hasElementChildren(children)) {
@@ -168,7 +400,30 @@ const getTextFromOrdered = (children: OrderedNode[]): string => {
     }
   }
   const joined = texts.join('');
-  return hasCdata ? joined : joined.trim();
+  return hasCdata || !trimBareText ? joined : joined.trim();
+};
+
+const getTextFromOrdered = (children: OrderedNode[]): string => collectPayload(children, true);
+
+// Capture how THIS element laid its text payload out in the source, so the
+// build can reproduce it exactly. Node-level on purpose: the corpus mixes
+// conventions inside single files, so a per-file majority vote always rewrites
+// the minority (see TextLayout in types/form.ts).
+const isIndentationText = (value: unknown): boolean => {
+  const t = extractText(value);
+  return t.trim() === '' && /\n/.test(t);
+};
+
+const detectTextLayout = (children: OrderedNode[]): TextLayout | undefined => {
+  if (!children || !Array.isArray(children) || children.length === 0) return undefined;
+  const first = children[0];
+  const last = children[children.length - 1];
+  return {
+    cdata: children.some(child => '#cdata' in child),
+    openOwnLine: '#text' in first && isIndentationText(first['#text']),
+    // guard on length: a lone whitespace child is the opening side, not the closing one
+    closeOwnLine: children.length > 1 && '#text' in last && isIndentationText(last['#text']),
+  };
 };
 
 // Extract original attributes
@@ -210,6 +465,7 @@ const parseDescription = (attrs: Record<string, unknown>, children: OrderedNode[
   prefix: String(attrs['@_prefix'] || ''),
   text: getTextFromOrdered(children),
   _originalAttrs: extractOriginalAttrs(attrs),
+  _textLayout: detectTextLayout(children),
 });
 
 // Parse Warning
@@ -219,6 +475,7 @@ const parseWarning = (attrs: Record<string, unknown>, children: OrderedNode[]): 
   text: getTextFromOrdered(children),
   preventSubmit: attrs['@_preventsubmit'] === 'true',
   _originalAttrs: extractOriginalAttrs(attrs),
+  _textLayout: detectTextLayout(children),
 });
 
 // Parse Note
@@ -229,6 +486,7 @@ const parseNote = (attrs: Record<string, unknown>, children: OrderedNode[]): For
   isCheckItem: attrs['@_ischeckitem'] === 'true',
   prefix: String(attrs['@_prefix'] || ''),
   _originalAttrs: extractOriginalAttrs(attrs),
+  _textLayout: detectTextLayout(children),
 });
 
 // Parse SimpleText - bare HTML fragment, E-Bar reads only id + text content
@@ -237,6 +495,7 @@ const parseSimpleText = (attrs: Record<string, unknown>, children: OrderedNode[]
   nodeType: 'simpletext',
   text: getTextFromOrdered(children),
   _originalAttrs: extractOriginalAttrs(attrs),
+  _textLayout: detectTextLayout(children),
 });
 
 // Parse Validator - standalone validator element
@@ -253,14 +512,19 @@ const parseAnswer = (attrs: Record<string, unknown>, children: OrderedNode[]): F
   nodeType: 'answer',
   text: getTextFromOrdered(children),
   _originalAttrs: extractOriginalAttrs(attrs),
+  _textLayout: detectTextLayout(children),
 });
 
 // Parse Unknown - preserve the raw subtree verbatim so nothing is silently lost
+// `raw` holds the UNDECODED subtree when one is available: it is re-emitted
+// verbatim, so it must carry source bytes, not decoded ones. Re-escaping a
+// decoded subtree would turn every "&#149;" back into "&amp;#149;".
 const parseUnknown = (tagName: string, attrs: Record<string, unknown>, child: OrderedNode): FormUnknown => ({
   id: String(attrs['@_id'] || generateId()),
   nodeType: 'unknown',
   tagName,
-  raw: structuredClone(child),
+  raw: structuredClone(rawNodeIndex.get(child) ?? child),
+  rawIsVerbatim: rawNodeIndex.has(child),
   _originalAttrs: extractOriginalAttrs(attrs),
 });
 
@@ -271,6 +535,7 @@ const parseOption = (attrs: Record<string, unknown>, children: OrderedNode[]): F
   value: String(attrs['@_value'] || ''),
   text: getTextFromOrdered(children),
   _originalAttrs: extractOriginalAttrs(attrs),
+  _textLayout: detectTextLayout(children),
 });
 
 // Parse Reference (no default for field - E-Bar reads it verbatim)
@@ -293,7 +558,7 @@ const parseQuestion = (attrs: Record<string, unknown>, children: OrderedNode[]):
 
     if (!tagName) continue;
     if (tagName === 'reference') {
-      questionChildren.push(parseReference(childAttrs));
+      questionChildren.push(attachRawSpellings(parseReference(childAttrs), child) as FormReference);
     } else {
       const parsed = parseSingleChild(child);
       if (parsed) questionChildren.push(parsed as FormQuestion['children'][number]);
@@ -405,7 +670,7 @@ parseConditionLogic = (attrs: Record<string, unknown>, children: OrderedNode[]):
     const tagName = getTagName(child);
 
     if (tagName === 'condition') {
-      conditions.push(parseCondition(childAttrs));
+      conditions.push(attachRawSpellings(parseCondition(childAttrs), child) as FormCondition);
     } else if (tagName) {
       // Parse other children using parseChildren logic
       const parsed = parseSingleChild(child);
@@ -445,7 +710,26 @@ parseEntity = (attrs: Record<string, unknown>, children: OrderedNode[]): FormEnt
 });
 
 // Parse a single child node
-const parseSingleChild = (child: OrderedNode): FormNode | null => {
+// Records the source spellings of a freshly-parsed node, so the build can put
+// the file's own bytes back for anything the user did not touch.
+const attachRawSpellings = (node: FormNode | null, source: OrderedNode): FormNode | null => {
+  if (!node) return node;
+  const startTagClose = startTagCloseIndex.get(source);
+  if (startTagClose) node._startTagClose = startTagClose;
+  if (node.nodeType === 'unknown') return node;
+  const rawAttrs = rawAttrsOf(source);
+  if (rawAttrs) node._rawAttrs = rawAttrs;
+  if ('text' in node && typeof node.text === 'string') {
+    const rawText = rawTextOf(source, node.text);
+    if (rawText !== undefined) node._rawText = rawText;
+  }
+  return node;
+};
+
+const parseSingleChild = (child: OrderedNode): FormNode | null =>
+  attachRawSpellings(parseSingleChildInner(child), child);
+
+const parseSingleChildInner = (child: OrderedNode): FormNode | null => {
   const childAttrs = getAttrs(child);
   const tagName = getTagName(child);
 
@@ -561,6 +845,9 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
       return null;
     }
 
+    indexRawSpellings(xmlString, result);
+    indexStartTagClosings(xmlString, result);
+
     const attrs = getAttrs(questionnaireNode);
     const children = questionnaireNode['questionnaire'] as OrderedNode[];
 
@@ -572,6 +859,8 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
       nextId: parseInt(String(attrs['@_nextid'] || '1'), 10) || 1,
       children: parseChildren(children),
       _originalAttrs: extractOriginalAttrs(attrs),
+      _rawAttrs: rawAttrsOf(questionnaireNode),
+      _startTagClose: startTagCloseIndex.get(questionnaireNode),
       _sourceFormat: detectSourceFormat(xmlString),
     };
 
@@ -588,14 +877,38 @@ export const parseXML = (xmlString: string): FormQuestionnaire | null => {
 // ============================================================================
 
 // Helper to create ordered node with attributes
+// Every element in the output passes through here exactly once, which makes it
+// the one place that has to decide how attribute values are spelled on disk.
+// The builder itself is running with processEntities off, so whatever string
+// lands in the map is what the file gets.
+// Attribute name after fast-xml-parser strips the '@_' prefix: __ffclose.
+// Must stay in step with DEFERRED_CONTENT_RE below.
+const START_TAG_CLOSE_MARKER = '@___ffclose';
+
 const createOrderedNode = (
   tagName: string,
   attrs: Record<string, unknown>,
-  children: OrderedNode[] = []
+  children: OrderedNode[] = [],
+  rawAttrs?: Record<string, string>,
+  startTagClose?: string
 ): OrderedNode => {
   const node: OrderedNode = {};
-  if (Object.keys(attrs).length > 0) {
-    node[':@'] = attrs;
+  const names = Object.keys(attrs);
+  const spelled: Record<string, unknown> = {};
+  for (const key of names) {
+    spelled[key] = key.startsWith('@_')
+      ? attrSpelling(rawAttrs, key.slice(2), String(attrs[key] ?? ''))
+      : attrs[key];
+  }
+  // Marker attribute, always last, telling the splice to terminate this start
+  // tag the way the source did. It carries the exact bytes ("/>", " />", " >")
+  // and never reaches the file. A self-closing spelling is dropped once the
+  // node has children, since it can no longer be written that way.
+  if (startTagClose && !(children.length > 0 && startTagClose.endsWith('/>'))) {
+    spelled[START_TAG_CLOSE_MARKER] = startTagClose;
+  }
+  if (Object.keys(spelled).length > 0) {
+    node[':@'] = spelled;
   }
   node[tagName] = children;
   return node;
@@ -672,7 +985,9 @@ const setBoolAttr = (
 };
 
 // Override a numeric attribute only when the value actually changed.
-// Keeps original spellings like min="" (E-Bar treats it as 0) byte-identical.
+// Keeps original spellings like min="" (E-Bar treats it as 0) byte-identical,
+// and — for a parsed node whose source simply never wrote the attribute — does
+// not invent one just because the model field defaults to 0.
 const setNumericAttr = (
   attrs: Record<string, unknown>,
   original: Record<string, string> | undefined,
@@ -680,27 +995,86 @@ const setNumericAttr = (
   value: number
 ): void => {
   const orig = original?.[name];
-  if (orig !== undefined && (parseInt(orig, 10) || 0) === (value || 0)) return;
+  if (orig !== undefined) {
+    if ((parseInt(orig, 10) || 0) === (value || 0)) return;
+  } else if (original !== undefined && (value || 0) === 0) {
+    return;
+  }
   attrs[`@_${name}`] = String(value || 0);
 };
 
-// Helper to create CDATA content in the correct format for preserveOrder mode
-const makeCdata = (text: string | undefined | null): OrderedNode[] => {
+// THE attribute-lifecycle rule, in one place.
+//
+// Every model field has a value it parses back to when its attribute is absent
+// from the source (a question with no comment="" parses to comment: ''). Those
+// three cases are all distinct and must stay distinct on the way out:
+//
+//   * node created fresh in the editor (no _originalAttrs at all) -> emit the
+//     full canonical attribute set E-Bar expects
+//   * attribute present in the source -> re-emit it, in its original position
+//     (mergeAttrs already seeded it) with whatever value the model now holds
+//   * attribute absent from the source -> emit ONLY if the user actually
+//     changed the value away from what "absent" means
+//
+// Collapsing the last two is what made FormForge rewrite 255 <question> lines
+// of the CO Character and Fitness questionnaire on every save: every question
+// that had never carried comment="" acquired one.
+const setDefaultedAttr = (
+  attrs: Record<string, unknown>,
+  original: Record<string, string> | undefined,
+  name: string,
+  value: string,
+  absentValue: string
+): void => {
+  if (original === undefined || name in original || value !== absentValue) {
+    attrs[`@_${name}`] = value;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Deferred text payloads
+//
+// A text-bearing leaf's payload is NOT handed to the XML builder. The builder
+// would re-wrap and re-indent it, and every later post-processing pass would
+// have to tiptoe around it. Instead the payload is parked here and a token is
+// emitted in its place; the token is replaced with the real bytes at the very
+// end of the build, after line-ending conversion. Two consequences that matter:
+//
+//   * the payload's own bytes are never touched by any pass, so text containing
+//     CRLF, "]]>", or a literal "__BOOL_TRUE__" survives verbatim
+//   * the surrounding whitespace is rebuilt from the node's own _textLayout,
+//     which is what makes per-node CDATA layouts possible at all
+// ---------------------------------------------------------------------------
+type PendingText = { text: string; layout: TextLayout; rawText?: string };
+let pendingTexts: PendingText[] = [];
+const resetPendingTexts = (): void => { pendingTexts = []; };
+
+// Layout for nodes created fresh in the editor: follow the open file's house
+// style so a new description doesn't stand out from its neighbours.
+const houseTextLayout = (sourceFormat?: SourceFormat): TextLayout => ({
+  cdata: true,
+  openOwnLine: sourceFormat?.cdataOwnLine ?? false,
+  closeOwnLine: !(sourceFormat?.cdataInlineClosing ?? true),
+});
+let fallbackTextLayout: TextLayout = houseTextLayout();
+
+const makeTextContent = (
+  text: string | undefined | null,
+  layout: TextLayout | undefined,
+  rawText?: string
+): OrderedNode[] => {
   const t = text || '';
   if (!t) return [];
-  // "]]>" would terminate the CDATA section early and produce malformed XML;
-  // the standard fix is splitting into adjacent CDATA sections (parse rejoins them)
-  const safe = t.replace(/\]\]>/g, ']]]]><![CDATA[>');
-  return [{ '#cdata': [{ '#text': safe }] }];
+  const token = `__FFTXT_${pendingTexts.length}__`;
+  pendingTexts.push({ text: t, layout: layout ?? fallbackTextLayout, rawText });
+  return [{ '#text': token }];
 };
 
 // Build Description node
 const buildDescription = (desc: FormDescription): OrderedNode => {
-  const attrs = mergeAttrs(desc._originalAttrs, {
-    '@_id': desc.id,
-    '@_prefix': desc.prefix,
-  });
-  return createOrderedNode('description', attrs, makeCdata(desc.text));
+  const attrs = mergeAttrs(desc._originalAttrs, { '@_id': desc.id });
+  setDefaultedAttr(attrs, desc._originalAttrs, 'prefix', desc.prefix, '');
+  return createOrderedNode('description', attrs, makeTextContent(desc.text, desc._textLayout, desc._rawText), desc._rawAttrs, desc._startTagClose);
 };
 
 // Build Warning node
@@ -711,19 +1085,17 @@ const buildWarning = (warning: FormWarning): OrderedNode => {
   if (warning.preventSubmit || warning._originalAttrs?.preventsubmit !== undefined) {
     attrs['@_preventsubmit'] = boolPlaceholder(warning.preventSubmit);
   }
-  return createOrderedNode('warning', attrs, makeCdata(warning.text));
+  return createOrderedNode('warning', attrs, makeTextContent(warning.text, warning._textLayout, warning._rawText), warning._rawAttrs, warning._startTagClose);
 };
 
 // Build Note node
 const buildNote = (note: FormNote): OrderedNode => {
-  const attrs = mergeAttrs(note._originalAttrs, {
-    '@_id': note.id,
-    '@_ischeckitem': String(note.isCheckItem),
-  });
+  const attrs = mergeAttrs(note._originalAttrs, { '@_id': note.id });
+  setDefaultedAttr(attrs, note._originalAttrs, 'ischeckitem', String(note.isCheckItem), 'false');
   if (note.prefix || note._originalAttrs?.prefix !== undefined) {
     attrs['@_prefix'] = note.prefix;
   }
-  return createOrderedNode('note', attrs, makeCdata(note.text));
+  return createOrderedNode('note', attrs, makeTextContent(note.text, note._textLayout, note._rawText), note._rawAttrs, note._startTagClose);
 };
 
 // Build SimpleText node
@@ -731,16 +1103,14 @@ const buildSimpleText = (st: FormSimpleText): OrderedNode => {
   const attrs = mergeAttrs(st._originalAttrs, {
     '@_id': st.id,
   });
-  return createOrderedNode('simpletext', attrs, makeCdata(st.text));
+  return createOrderedNode('simpletext', attrs, makeTextContent(st.text, st._textLayout, st._rawText), st._rawAttrs, st._startTagClose);
 };
 
 // Build Validator node
 const buildValidator = (validator: FormValidator): OrderedNode => {
-  const attrs = mergeAttrs(validator._originalAttrs, {
-    '@_id': validator.id,
-    '@_validatorclass': validator.validatorClass,
-  });
-  return createOrderedNode('validator', attrs, []);
+  const attrs = mergeAttrs(validator._originalAttrs, { '@_id': validator.id });
+  setDefaultedAttr(attrs, validator._originalAttrs, 'validatorclass', validator.validatorClass, '');
+  return createOrderedNode('validator', attrs, [], validator._rawAttrs, validator._startTagClose);
 };
 
 // Build Answer node
@@ -748,7 +1118,7 @@ const buildAnswer = (answer: FormAnswer): OrderedNode => {
   const attrs = mergeAttrs(answer._originalAttrs, {
     '@_id': answer.id,
   });
-  return createOrderedNode('answer', attrs, makeCdata(answer.text));
+  return createOrderedNode('answer', attrs, makeTextContent(answer.text, answer._textLayout, answer._rawText), answer._rawAttrs, answer._startTagClose);
 };
 
 // Build Unknown node - re-emit the preserved raw subtree verbatim.
@@ -757,12 +1127,18 @@ const buildAnswer = (answer: FormAnswer): OrderedNode => {
 // serialization into the final string in a post-processing pass.
 let rawSubtrees: string[] = [];
 const resetRawSubtrees = (): void => { rawSubtrees = []; };
+// The placeholder is an empty ELEMENT rather than a text node on purpose. A
+// text child makes fast-xml-parser treat the parent as text content and pull
+// everything onto one line, which silently ate the newline and indentation
+// around any preserved subtree that happened to be its parent's only child.
+// An element placeholder gets laid out exactly like the element it stands in
+// for, and the splice then swaps in the verbatim bytes.
 const buildUnknown = (unknown: FormUnknown): OrderedNode | null => {
   if (!unknown.raw) return null;
-  const verbatim = innerXmlBuilder().build([structuredClone(unknown.raw)]);
+  const verbatim = innerXmlBuilder(!unknown.rawIsVerbatim).build([structuredClone(unknown.raw)]);
   const token = `__FFRAW_${rawSubtrees.length}__`;
   rawSubtrees.push(verbatim);
-  return { '#text': token } as OrderedNode;
+  return { [token]: [] } as OrderedNode;
 };
 const spliceRawSubtrees = (xmlContent: string): string => {
   return xmlContent.replace(/__FFRAW_(\d+)__/g, (match, idx) => {
@@ -773,21 +1149,17 @@ const spliceRawSubtrees = (xmlContent: string): string => {
 
 // Build Option node
 const buildOption = (option: FormOption): OrderedNode => {
-  const attrs = mergeAttrs(option._originalAttrs, {
-    '@_id': option.id,
-    '@_value': option.value,
-  });
-  return createOrderedNode('option', attrs, makeCdata(option.text));
+  const attrs = mergeAttrs(option._originalAttrs, { '@_id': option.id });
+  setDefaultedAttr(attrs, option._originalAttrs, 'value', option.value, '');
+  return createOrderedNode('option', attrs, makeTextContent(option.text, option._textLayout, option._rawText), option._rawAttrs, option._startTagClose);
 };
 
 // Build Reference node
 const buildReference = (ref: FormReference): OrderedNode => {
-  const attrs = mergeAttrs(ref._originalAttrs, {
-    '@_id': ref.id,
-    '@_table': ref.table,
-    '@_field': ref.field,
-  });
-  return createOrderedNode('reference', attrs, []);
+  const attrs = mergeAttrs(ref._originalAttrs, { '@_id': ref.id });
+  setDefaultedAttr(attrs, ref._originalAttrs, 'table', ref.table, '');
+  setDefaultedAttr(attrs, ref._originalAttrs, 'field', ref.field, '');
+  return createOrderedNode('reference', attrs, [], ref._rawAttrs, ref._startTagClose);
 };
 
 // Build Question node
@@ -800,14 +1172,17 @@ const buildQuestion = (question: FormQuestion): OrderedNode => {
     question._originalAttrs?.required === '' && question.required === false
       ? ''
       : boolPlaceholder(question.required);
-  const attrs = mergeAttrs(question._originalAttrs, {
-    '@_id': question.id,
-    '@_type': typeValue,
-    '@_format': question.format,
-    '@_required': requiredValue,
-    '@_triggervalue': boolPlaceholder(question.triggerValue),
-    '@_comment': question.comment || '',
-  });
+  const attrs = mergeAttrs(question._originalAttrs, { '@_id': question.id });
+  // Order of these calls is the attribute order a BRAND NEW question gets;
+  // a parsed question keeps whatever order the source used (mergeAttrs seeded
+  // it) and only picks up an attr here if the source had it or the user
+  // changed it away from its absent-value. parseQuestion's own defaults are
+  // the absent-values: type "char", everything else empty/false.
+  setDefaultedAttr(attrs, question._originalAttrs, 'type', typeValue, 'char');
+  setDefaultedAttr(attrs, question._originalAttrs, 'format', question.format, '');
+  setDefaultedAttr(attrs, question._originalAttrs, 'required', requiredValue, boolPlaceholder(false));
+  setDefaultedAttr(attrs, question._originalAttrs, 'triggervalue', boolPlaceholder(question.triggerValue), '');
+  setDefaultedAttr(attrs, question._originalAttrs, 'comment', question.comment || '', '');
 
   if (question.maxlength) {
     attrs['@_maxlength'] = String(question.maxlength);
@@ -832,19 +1207,17 @@ const buildQuestion = (question: FormQuestion): OrderedNode => {
     if (built) children.push(built);
   }
 
-  return createOrderedNode('question', attrs, children);
+  return createOrderedNode('question', attrs, children, question._rawAttrs, question._startTagClose);
 };
 
 // Build Condition node
 const buildCondition = (cond: FormCondition): OrderedNode | null => {
   if (!cond) return null;
-  const attrs = mergeAttrs(cond._originalAttrs, {
-    '@_id': cond.id,
-    '@_equals': boolPlaceholder(cond.equals),
-    '@_value': cond.value || '',
-    '@_questionid': cond.questionId || '',
-  });
-  return createOrderedNode('condition', attrs, []);
+  const attrs = mergeAttrs(cond._originalAttrs, { '@_id': cond.id });
+  setDefaultedAttr(attrs, cond._originalAttrs, 'equals', boolPlaceholder(cond.equals), boolPlaceholder('true'));
+  setDefaultedAttr(attrs, cond._originalAttrs, 'value', cond.value || '', '');
+  setDefaultedAttr(attrs, cond._originalAttrs, 'questionid', cond.questionId || '', '');
+  return createOrderedNode('condition', attrs, [], cond._rawAttrs, cond._startTagClose);
 };
 
 // Build generic node (recursive)
@@ -879,10 +1252,8 @@ const buildNode = (node: FormNode): OrderedNode | null => {
       return buildQuestion(node as FormQuestion);
     case 'entity': {
       const entity = node as FormEntity;
-      const attrs = mergeAttrs(entity._originalAttrs, {
-        '@_id': entity.id,
-        '@_title': entity.title,
-      });
+      const attrs = mergeAttrs(entity._originalAttrs, { '@_id': entity.id });
+      setDefaultedAttr(attrs, entity._originalAttrs, 'title', entity.title, '');
       // keep original spelling type="" (E-Bar treats it as single)
       const origType = entity._originalAttrs?.type;
       if (!(origType !== undefined && (origType === entity.type || (origType === '' && entity.type === 'single')))) {
@@ -891,11 +1262,16 @@ const buildNode = (node: FormNode): OrderedNode | null => {
       setNumericAttr(attrs, entity._originalAttrs, 'min', entity.min);
       setNumericAttr(attrs, entity._originalAttrs, 'max', entity.max);
       // order/nextorder drive E-Bar's add-more bookkeeping; emit whenever the
-      // original had them, the values are non-default, or the entity repeats
-      if (entity._originalAttrs?.order !== undefined || entity.entityOrder !== 0 || entity.type === 'addmore') {
+      // original had them, the values are non-default, or this is a brand new
+      // addmore entity (no _originalAttrs at all - created fresh via the UI's
+      // addEntity action, which needs them from the start). A legacy source
+      // entity that simply predates these attrs must not have them forced on
+      // just because it happens to be type="addmore".
+      const isBrandNew = entity._originalAttrs === undefined;
+      if (entity._originalAttrs?.order !== undefined || entity.entityOrder !== 0 || (isBrandNew && entity.type === 'addmore')) {
         attrs['@_order'] = String(entity.entityOrder ?? 0);
       }
-      if (entity._originalAttrs?.nextorder !== undefined || entity.nextOrder !== 1 || entity.type === 'addmore') {
+      if (entity._originalAttrs?.nextorder !== undefined || entity.nextOrder !== 1 || (isBrandNew && entity.type === 'addmore')) {
         attrs['@_nextorder'] = String(entity.nextOrder ?? 1);
       }
       if (entity.showInBarAdmin !== undefined) {
@@ -913,27 +1289,23 @@ const buildNode = (node: FormNode): OrderedNode | null => {
         const built = buildNode(child);
         if (built) children.push(built);
       }
-      return createOrderedNode('entity', attrs, children);
+      return createOrderedNode('entity', attrs, children, entity._rawAttrs, entity._startTagClose);
     }
     case 'conditionset': {
       const cs = node as FormConditionSet;
-      const attrs = mergeAttrs(cs._originalAttrs, {
-        '@_id': cs.id,
-        '@_operator': cs.operator,
-      });
+      const attrs = mergeAttrs(cs._originalAttrs, { '@_id': cs.id });
+      setDefaultedAttr(attrs, cs._originalAttrs, 'operator', cs.operator, 'and');
       const children: OrderedNode[] = [];
       for (const child of (cs.children || [])) {
         const built = buildNode(child);
         if (built) children.push(built);
       }
-      return createOrderedNode('conditionset', attrs, children);
+      return createOrderedNode('conditionset', attrs, children, cs._rawAttrs, cs._startTagClose);
     }
     case 'conditionlogic': {
       const cl = node as FormConditionLogic;
-      const attrs = mergeAttrs(cl._originalAttrs, {
-        '@_id': cl.id,
-        '@_operator': cl.operator,
-      });
+      const attrs = mergeAttrs(cl._originalAttrs, { '@_id': cl.id });
+      setDefaultedAttr(attrs, cl._originalAttrs, 'operator', cl.operator, 'or');
       const children: OrderedNode[] = [];
       // Add conditions first
       if (cl.conditions) {
@@ -947,28 +1319,24 @@ const buildNode = (node: FormNode): OrderedNode | null => {
         const built = buildNode(child);
         if (built) children.push(built);
       }
-      return createOrderedNode('conditionlogic', attrs, children);
+      return createOrderedNode('conditionlogic', attrs, children, cl._rawAttrs, cl._startTagClose);
     }
     case 'conditional': {
       const cond = node as FormConditional;
-      const attrs = mergeAttrs(cond._originalAttrs, {
-        '@_id': cond.id,
-        '@_condition': cond.condition || 'true',
-      });
+      const attrs = mergeAttrs(cond._originalAttrs, { '@_id': cond.id });
+      setDefaultedAttr(attrs, cond._originalAttrs, 'condition', boolPlaceholder(cond.condition || 'true'), boolPlaceholder('true'));
       const children: OrderedNode[] = [];
       for (const child of (cond.children || [])) {
         const built = buildNode(child);
         if (built) children.push(built);
       }
-      return createOrderedNode('conditional', attrs, children);
+      return createOrderedNode('conditional', attrs, children, cond._rawAttrs, cond._startTagClose);
     }
     case 'includeform': {
       const inc = node as FormIncludeForm;
-      const attrs = mergeAttrs(inc._originalAttrs, {
-        '@_id': inc.id,
-        '@_formname': inc.formName,
-        '@_type': inc.type,
-      });
+      const attrs = mergeAttrs(inc._originalAttrs, { '@_id': inc.id });
+      setDefaultedAttr(attrs, inc._originalAttrs, 'formname', inc.formName, '');
+      setDefaultedAttr(attrs, inc._originalAttrs, 'type', inc.type, 'online');
       if (inc.title || inc._originalAttrs?.title !== undefined) {
         attrs['@_title'] = inc.title;
       }
@@ -985,16 +1353,14 @@ const buildNode = (node: FormNode): OrderedNode | null => {
         const built = buildNode(child);
         if (built) children.push(built);
       }
-      return createOrderedNode('includeform', attrs, children);
+      return createOrderedNode('includeform', attrs, children, inc._rawAttrs, inc._startTagClose);
     }
     case 'required-doc': {
       const doc = node as FormRequiredDocument;
-      const attrs = mergeAttrs(doc._originalAttrs, {
-        '@_id': doc.id,
-        '@_title': doc.title,
-        '@_preventsubmit': boolPlaceholder(doc.preventSubmit),
-      });
-      return createOrderedNode('required-doc', attrs, []);
+      const attrs = mergeAttrs(doc._originalAttrs, { '@_id': doc.id });
+      setDefaultedAttr(attrs, doc._originalAttrs, 'title', doc.title, '');
+      setDefaultedAttr(attrs, doc._originalAttrs, 'preventsubmit', boolPlaceholder(doc.preventSubmit), boolPlaceholder(false));
+      return createOrderedNode('required-doc', attrs, [], doc._rawAttrs, doc._startTagClose);
     }
     default:
       return null;
@@ -1003,10 +1369,8 @@ const buildNode = (node: FormNode): OrderedNode | null => {
 
 // Build SubSection node
 const buildSubSection = (subsection: FormSubSection): OrderedNode => {
-  const attrs = mergeAttrs(subsection._originalAttrs, {
-    '@_id': subsection.id,
-    '@_title': subsection.title,
-  });
+  const attrs = mergeAttrs(subsection._originalAttrs, { '@_id': subsection.id });
+  setDefaultedAttr(attrs, subsection._originalAttrs, 'title', subsection.title, '');
   if (subsection.showInBarAdmin !== undefined) {
     attrs['@_showinbaradmin'] = boolPlaceholder(subsection.showInBarAdmin);
   }
@@ -1026,15 +1390,13 @@ const buildSubSection = (subsection: FormSubSection): OrderedNode => {
     const built = buildNode(child);
     if (built) children.push(built);
   }
-  return createOrderedNode('subsection', attrs, children);
+  return createOrderedNode('subsection', attrs, children, subsection._rawAttrs, subsection._startTagClose);
 };
 
 // Build Section node
 const buildSection = (section: FormSection): OrderedNode => {
-  const attrs = mergeAttrs(section._originalAttrs, {
-    '@_id': section.id,
-    '@_title': section.title,
-  });
+  const attrs = mergeAttrs(section._originalAttrs, { '@_id': section.id });
+  setDefaultedAttr(attrs, section._originalAttrs, 'title', section.title, '');
   if (section.showInBarAdmin !== undefined) {
     attrs['@_showinbaradmin'] = boolPlaceholder(section.showInBarAdmin);
   }
@@ -1043,7 +1405,7 @@ const buildSection = (section: FormSection): OrderedNode => {
     const built = buildNode(child);
     if (built) children.push(built);
   }
-  return createOrderedNode('section', attrs, children);
+  return createOrderedNode('section', attrs, children, section._rawAttrs, section._startTagClose);
 };
 
 // Post-process XML to fix boolean placeholders
@@ -1053,14 +1415,138 @@ const fixBooleanPlaceholders = (xmlContent: string): string => {
     .replace(/__BOOL_FALSE__/g, 'false');
 };
 
-// Placeholder fix-ups run only OUTSIDE CDATA sections so user text that
-// happens to contain a literal token can never be corrupted. Bool fix runs
-// before the raw splice so preserved-verbatim subtrees are never touched.
+// Boolean placeholders only ever appear in attribute values, and user text is
+// not in the document at this point (it is still parked as tokens, see
+// makeTextContent), so this pass cannot touch anything it should not.
+//
+// There is deliberately no global apostrophe pass here any more. Rewriting
+// every "&apos;" to a literal apostrophe fixed the majority of the corpus by
+// corrupting the 33 files that spell it "&apos;"; spelling is now decided per
+// attribute from the source itself (attrSpelling / _rawAttrs).
 const postProcessPlaceholders = (xmlContent: string): string =>
-  xmlContent
-    .split(/(<!\[CDATA\[[\s\S]*?\]\]>)/)
-    .map((part, i) => (i % 2 === 1 ? part : spliceRawSubtrees(fixBooleanPlaceholders(part))))
-    .join('');
+  fixBooleanPlaceholders(xmlContent);
+
+// "]]>" inside a CDATA payload would terminate the section early and produce
+// malformed XML; the standard fix is splitting into adjacent CDATA sections,
+// which any parser (including ours) rejoins transparently.
+const cdataSafe = (text: string): string => text.replace(/\]\]>/g, ']]]]><![CDATA[>');
+
+// A payload written as bare text rather than CDATA has to be spelled out again,
+// since the parser handed it back decoded. Same rule as attributes: the
+// source's own bytes when the user did not touch it, a freshly-escaped value
+// when they did.
+const bareTextSpelling = (text: string, rawText: string | undefined): string => {
+  // `text` is the trimmed, decoded payload, so trimming the decoded source is
+  // exactly the round trip the parser performed: equal means untouched.
+  if (rawText !== undefined && decodeXmlEntities(rawText).trim() === text) return rawText;
+  return escapeTextValue(text);
+};
+
+// fast-xml-parser normalises CRLF to LF inside text and CDATA content, so a
+// multi-line payload lifted out of a CRLF file comes back with bare LFs. These
+// payloads are spliced in after applySourceLineEnding has already run (so that
+// nothing can rewrite their bytes), which means they have to carry the
+// document's line ending themselves.
+const applyEol = (text: string, eol: string): string =>
+  eol === '\n' ? text : text.replace(/\r\n/g, '\n').replace(/\n/g, eol);
+
+// Final pass of the build: swap every parked token for its real bytes.
+//
+// Both token kinds are handled in ONE regex on purpose. `String.replace` never
+// rescans what it inserted, so a description whose text literally contains
+// "__FFRAW_0__" cannot be mangled by the raw-subtree pass, and a preserved raw
+// subtree containing "__FFTXT_0__" cannot be mangled by the text pass. Running
+// them as two sequential passes would break exactly those cases.
+//
+// The text branch also swallows the element's closing tag, which is what lets
+// the node's own _textLayout decide where the payload and the closing tag sit
+// relative to the opening tag — per node, not per file.
+// Three things are swapped back in here, in ONE regex on purpose.
+// `String.replace` never rescans what it inserted, so a description whose text
+// literally contains "__FFRAW_0__" cannot be mangled by the raw-subtree branch,
+// and a preserved raw subtree containing "__FFTXT_0__" cannot be mangled by the
+// text branch. Sequential passes would break exactly those cases.
+//
+//   1. text payloads   - the branch also swallows the element's closing tag,
+//                        which is what lets each node's own _textLayout decide
+//                        where the payload and closing tag sit
+//   2. raw subtrees    - an empty <__FFRAW_n__></__FFRAW_n__> placeholder
+//                        element, already indented by the builder
+//   3. start tags      - the marker attribute added by createOrderedNode,
+//                        carrying the source's own "/>", " />" or " >"
+// The start-tag marker as it appears in the built document, anchored to the end
+// of a start tag. Branch 1 below wins the alternation for a text-bearing
+// element, swallowing its whole start tag into `before`, so that branch has to
+// resolve the marker itself or it would be written straight to the file.
+const START_TAG_CLOSE_ATTR = String.raw` __ffclose="([^"]*)">`;
+const START_TAG_CLOSE_AT_END_RE = new RegExp(`${START_TAG_CLOSE_ATTR}$`);
+
+const DEFERRED_CONTENT_RE = new RegExp(
+  [
+    String.raw`^([ \t]*)([^\r\n]*?)__FFTXT_(\d+)__(<\/[A-Za-z][\w.:-]*>)`,
+    // no backreference: capture groups are numbered across the whole alternation
+    String.raw`<__FFRAW_(\d+)__><\/__FFRAW_\d+__>`,
+    `${START_TAG_CLOSE_ATTR}(<\\/[A-Za-z_][\\w.:-]*>)?`,
+  ].join('|'),
+  'gm'
+);
+
+const spliceDeferredContent = (xmlContent: string, eol: string, indentUnit: string): string =>
+  xmlContent.replace(
+    DEFERRED_CONTENT_RE,
+    (
+      match,
+      indent: string,
+      before: string,
+      textIdx: string,
+      closeTag: string,
+      rawIdx: string,
+      startTagClose: string,
+      closingTag: string | undefined
+    ) => {
+      if (startTagClose !== undefined) {
+        // A self-closing spelling replaces the closing tag; anything else
+        // (a plain " >") keeps whatever followed it.
+        return startTagClose.endsWith('/>') ? startTagClose : `${startTagClose}${closingTag ?? ''}`;
+      }
+      if (rawIdx !== undefined) {
+        const raw = rawSubtrees[parseInt(rawIdx, 10)];
+        return raw !== undefined ? applyEol(raw, eol) : match;
+      }
+      const pending = pendingTexts[parseInt(textIdx, 10)];
+      if (!pending) return match;
+      const { text, layout, rawText } = pending;
+      const body = applyEol(text, eol);
+      const payload = layout.cdata
+        ? `<![CDATA[${cdataSafe(body)}]]>`
+        : bareTextSpelling(body, rawText === undefined ? undefined : applyEol(rawText, eol));
+      const openGap = layout.openOwnLine ? `${eol}${indent}${indentUnit}` : '';
+      const closeGap = layout.closeOwnLine ? `${eol}${indent}` : '';
+      // `before` is this element's whole start tag, so it may still carry the
+      // marker: <description id="1" __ffclose=" >"> becomes <description id="1" >.
+      const startTag = before.replace(START_TAG_CLOSE_AT_END_RE, (_m, close: string) => close);
+      return `${indent}${startTag}${openGap}${payload}${closeGap}${closeTag}`;
+    }
+  );
+
+// Shared tail of buildXML/buildSubformXML. Order matters: placeholders and
+// line endings are resolved while the document still contains only structure,
+// and the real payload bytes are spliced in last so nothing can rewrite them.
+const finalizeDocument = (built: string, sourceFormat: SourceFormat | undefined): string => {
+  const indentUnit = sourceFormat?.indent ?? builderOptions.indentBy;
+  const eol = sourceFormat?.lineEnding ?? '\n';
+  const encoding = sourceFormat?.encoding ?? 'UTF-8';
+  const trailingNewline = sourceFormat?.trailingNewline ? '\n' : '';
+  // builder.build() always emits a leading "\n" before the root tag — trimStart
+  // it so it doesn't stack with the "\n" after the XML declaration and leave a
+  // blank line every save.
+  const body = postProcessPlaceholders(built).trimStart();
+  const document = applySourceLineEnding(
+    `<?xml version="1.0" encoding="${encoding}"?>\n${body}${trailingNewline}`,
+    sourceFormat
+  );
+  return spliceDeferredContent(document, eol, indentUnit);
+};
 
 // ============================================================================
 // PUBLIC BUILD FUNCTIONS
@@ -1069,15 +1555,17 @@ const postProcessPlaceholders = (xmlContent: string): string =>
 // Build XML from form (questionnaire)
 export const buildXML = (form: FormQuestionnaire): string => {
   resetRawSubtrees();
+  resetPendingTexts();
+  fallbackTextLayout = houseTextLayout(form._sourceFormat);
   const builder = new XMLBuilder({ ...builderOptions, indentBy: form._sourceFormat?.indent ?? builderOptions.indentBy });
 
   // Build questionnaire
   const questionnaireAttrs = mergeAttrs(form._originalAttrs, {
     '@_id': form.id,
     '@_nextid': String(form.nextId),
-    '@_suffix': form.suffix,
-    '@_title': form.title,
   });
+  setDefaultedAttr(questionnaireAttrs, form._originalAttrs, 'suffix', form.suffix, '');
+  setDefaultedAttr(questionnaireAttrs, form._originalAttrs, 'title', form.title, 'Untitled Form');
 
   const sectionNodes: OrderedNode[] = [];
   for (const child of (form.children || [])) {
@@ -1086,11 +1574,10 @@ export const buildXML = (form: FormQuestionnaire): string => {
   }
 
   const xmlObj: OrderedNode[] = [
-    createOrderedNode('questionnaire', questionnaireAttrs, sectionNodes),
+    createOrderedNode('questionnaire', questionnaireAttrs, sectionNodes, form._rawAttrs, form._startTagClose),
   ];
 
-  const xmlContent = postProcessPlaceholders(builder.build(xmlObj));
-  return applySourceLineEnding(`<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`, form._sourceFormat);
+  return finalizeDocument(builder.build(xmlObj), form._sourceFormat);
 };
 
 // Create empty form
@@ -1126,6 +1613,9 @@ export const parseSubformXML = (xmlString: string): FormSubform | null => {
       return null;
     }
 
+    indexRawSpellings(xmlString, result);
+    indexStartTagClosings(xmlString, result);
+
     const attrs = getAttrs(subformNode);
     const children = subformNode['subform'] as OrderedNode[];
 
@@ -1137,6 +1627,8 @@ export const parseSubformXML = (xmlString: string): FormSubform | null => {
       nextId: parseInt(String(attrs['@_nextid'] || '1'), 10) || 1,
       children: parseChildren(children),
       _originalAttrs: extractOriginalAttrs(attrs),
+      _rawAttrs: rawAttrsOf(subformNode),
+      _startTagClose: startTagCloseIndex.get(subformNode),
       _sourceFormat: detectSourceFormat(xmlString),
     };
 
@@ -1150,16 +1642,20 @@ export const parseSubformXML = (xmlString: string): FormSubform | null => {
 // Build Subform XML - now uses shared helpers
 export const buildSubformXML = (form: FormSubform): string => {
   resetRawSubtrees();
+  resetPendingTexts();
+  fallbackTextLayout = houseTextLayout(form._sourceFormat);
   const builder = new XMLBuilder({ ...builderOptions, indentBy: form._sourceFormat?.indent ?? builderOptions.indentBy });
 
   // Build subform
   const subformAttrs = mergeAttrs(form._originalAttrs, {
     '@_id': form.id,
     '@_nextid': String(form.nextId),
-    '@_suffix': form.suffix,
-    '@_order': '0',
-    '@_title': form.title,
   });
+  setDefaultedAttr(subformAttrs, form._originalAttrs, 'suffix', form.suffix, '');
+  // A subform's order is E-Bar bookkeeping the model does not track; only
+  // brand-new subforms need it seeded, an existing one keeps its own value.
+  setDefaultedAttr(subformAttrs, form._originalAttrs, 'order', form._originalAttrs?.order ?? '0', '0');
+  setDefaultedAttr(subformAttrs, form._originalAttrs, 'title', form.title, 'Untitled Subform');
 
   const childNodes: OrderedNode[] = [];
   for (const child of (form.children || [])) {
@@ -1168,11 +1664,10 @@ export const buildSubformXML = (form: FormSubform): string => {
   }
 
   const xmlObj: OrderedNode[] = [
-    createOrderedNode('subform', subformAttrs, childNodes),
+    createOrderedNode('subform', subformAttrs, childNodes, form._rawAttrs, form._startTagClose),
   ];
 
-  const xmlContent = postProcessPlaceholders(builder.build(xmlObj));
-  return applySourceLineEnding(`<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`, form._sourceFormat);
+  return finalizeDocument(builder.build(xmlObj), form._sourceFormat);
 };
 
 // Create empty subform

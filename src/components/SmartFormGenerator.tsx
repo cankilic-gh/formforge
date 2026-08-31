@@ -6,6 +6,7 @@ import { useModal } from '@/components/Modal';
 import { buildAnyXML, parseAnyXML } from '@/lib/xmlParser';
 import { walkNodes } from '@/lib/validation';
 import { DiffView, countDiff } from '@/components/DiffView';
+import { readAiFixResponse, AiFixProgressEvent } from '@/lib/aiFixStream';
 import {
   X, Wand2, FileText, Upload, Sparkles, Loader2, CheckCircle2, AlertCircle,
   AlertTriangle, ListChecks, Paperclip, HelpCircle,
@@ -169,7 +170,7 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
   // Which half of this modal is active: the free, instant field-list detector
   // (unchanged, no AI cost) or the AI-driven document generator (PDF/Word,
   // slower, draws from the Claude subscription — see aiFixLiveTestingCostCaution).
-  const [genMode, setGenMode] = useState<GenMode>('fields');
+  const [genMode, setGenMode] = useState<GenMode>('ai');
 
   // --- AI mode state ---
   const [aiInstruction, setAiInstruction] = useState('');
@@ -180,6 +181,8 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
   const aiFileInputRef = useRef<HTMLInputElement>(null);
   const aiAbortRef = useRef<AbortController | null>(null);
   const [aiElapsedSec, setAiElapsedSec] = useState(0);
+  const [aiProgress, setAiProgress] = useState<AiFixProgressEvent | null>(null);
+  const [aiProgressLog, setAiProgressLog] = useState<string[]>([]);
 
   useEffect(() => {
     if (aiStep !== 'running') { setAiElapsedSec(0); return; }
@@ -192,12 +195,14 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
     setInputText('');
     setDetectedFields([]);
     setStep('input');
-    setGenMode('fields');
+    setGenMode('ai');
     setAiInstruction('');
     setAiAttachment(null);
     setAiStep('input');
     setAiResult(null);
     setAiErrorMsg('');
+    setAiProgress(null);
+    setAiProgressLog([]);
   };
 
   const closeNow = () => {
@@ -338,6 +343,8 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
     }
 
     setAiStep('running');
+    setAiProgress(null);
+    setAiProgressLog([]);
     const controller = new AbortController();
     aiAbortRef.current = controller;
     try {
@@ -347,7 +354,10 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
       body.set('mode', 'generate');
       if (aiAttachment) body.set('attachment', aiAttachment);
       const res = await fetch('/api/ai/fix', { method: 'POST', body, signal: controller.signal });
-      const data: AiGenerateResponse = await res.json();
+      const data = await readAiFixResponse<AiGenerateResponse>(res, (event) => {
+        setAiProgress(event);
+        setAiProgressLog((log) => [...log.slice(-49), event.label]);
+      });
       if (!data.ok && !Array.isArray(data.edits)) {
         setAiErrorMsg(data.error || 'AI Generate failed for an unknown reason.');
         setAiStep('error');
@@ -387,7 +397,7 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <Wand2 className="w-5 h-5 text-cyan-600" />
-            <h2 className="text-lg font-semibold text-slate-800">Generate</h2>
+            <h2 className="text-lg font-semibold text-slate-800">AI Generate</h2>
           </div>
           <button onClick={handleClose} className="p-1 hover:bg-slate-100 rounded-lg">
             <X className="w-5 h-5 text-slate-400" />
@@ -398,16 +408,16 @@ export const SmartFormGenerator: React.FC<SmartFormGeneratorProps> = ({ isOpen, 
         {step === 'input' && aiStep === 'input' && (
           <div className="flex gap-1 border-b border-slate-100 bg-slate-50 p-2">
             <button
-              onClick={() => setGenMode('fields')}
-              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${genMode === 'fields' ? 'bg-white shadow-sm text-cyan-700 border border-cyan-200' : 'text-slate-500 hover:bg-white/60'}`}
-            >
-              Paste Field List
-            </button>
-            <button
               onClick={() => setGenMode('ai')}
               className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${genMode === 'ai' ? 'bg-white shadow-sm text-cyan-700 border border-cyan-200' : 'text-slate-500 hover:bg-white/60'}`}
             >
               AI: PDF / Word Document
+            </button>
+            <button
+              onClick={() => setGenMode('fields')}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${genMode === 'fields' ? 'bg-white shadow-sm text-cyan-700 border border-cyan-200' : 'text-slate-500 hover:bg-white/60'}`}
+            >
+              Paste Field List
             </button>
           </div>
         )}
@@ -564,11 +574,41 @@ Please describe your work experience:`}
           )}
 
           {genMode === 'ai' && aiStep === 'running' && (
-            <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-500">
+            <div className="flex min-h-64 flex-col items-center justify-center gap-4 py-6 text-slate-500">
               <Loader2 className="w-8 h-8 animate-spin text-cyan-600" />
-              <p className="text-sm">
-                Building and validating{aiElapsedSec >= 3 ? ` — ${aiElapsedSec}s elapsed` : '…'}
+              <p className="text-center text-sm">
+                {aiProgress?.label || 'Starting…'}
+                {aiElapsedSec >= 3 ? ` — ${aiElapsedSec}s elapsed` : ''}
               </p>
+
+              {aiProgress && (
+                <div className="w-full max-w-sm">
+                  <div className="mb-1 flex justify-between text-[11px] text-slate-400">
+                    <span>Turn {aiProgress.turn} of up to {aiProgress.maxTurns}</span>
+                    <span>{aiProgress.editsApplied} edit(s) applied</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-cyan-500 transition-all"
+                      style={{ width: `${Math.min(100, (aiProgress.turn / aiProgress.maxTurns) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    A bound, not an ETA — it can finish well before the last turn.
+                  </p>
+                </div>
+              )}
+
+              {aiProgressLog.length > 0 && (
+                <div className="max-h-32 w-full max-w-sm overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-2 font-mono text-xs text-slate-500">
+                  {aiProgressLog.map((line, i) => (
+                    <div key={i} className={i === aiProgressLog.length - 1 ? 'font-medium text-slate-700' : ''}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {aiElapsedSec >= 45 && (
                 <p className="max-w-sm text-center text-xs text-slate-400">
                   A full document can take a few minutes — it&apos;s reading and building one section at a time.

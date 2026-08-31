@@ -5,6 +5,7 @@ import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
 import { buildAnyXML, parseAnyXML } from '@/lib/xmlParser';
 import { DiffView, countDiff } from '@/components/DiffView';
+import { readAiFixResponse, AiFixProgressEvent } from '@/lib/aiFixStream';
 import { X, Sparkles, Loader2, CheckCircle2, AlertCircle, AlertTriangle, ListChecks, Paperclip, FileText, HelpCircle } from 'lucide-react';
 
 interface AiFixModalProps {
@@ -49,6 +50,12 @@ export const AiFixModal: React.FC<AiFixModalProps> = ({ isOpen, onClose }) => {
   // could silently mutate state after the modal was already reset.
   const abortRef = useRef<AbortController | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
+  // Live activity feed from the server (turn/tool-call level) — there's no
+  // way to know total time up front (depends on document size), but turn
+  // count against maxTurns is a real, known bound, and a step's worth of
+  // labels beats a bare spinner for telling "still working" from "frozen".
+  const [progress, setProgress] = useState<AiFixProgressEvent | null>(null);
+  const [progressLog, setProgressLog] = useState<string[]>([]);
 
   // A real multi-item ticket can legitimately take minutes (read the
   // document, edit + validate each item). Without any feedback that looks
@@ -67,6 +74,8 @@ export const AiFixModal: React.FC<AiFixModalProps> = ({ isOpen, onClose }) => {
     setStep('input');
     setResult(null);
     setErrorMsg('');
+    setProgress(null);
+    setProgressLog([]);
   };
 
   const closeNow = () => {
@@ -115,6 +124,8 @@ export const AiFixModal: React.FC<AiFixModalProps> = ({ isOpen, onClose }) => {
   const handleRun = async () => {
     if (!form || (!instruction.trim() && !attachment)) return;
     setStep('running');
+    setProgress(null);
+    setProgressLog([]);
     const controller = new AbortController();
     abortRef.current = controller;
     try {
@@ -123,7 +134,10 @@ export const AiFixModal: React.FC<AiFixModalProps> = ({ isOpen, onClose }) => {
       body.set('instruction', instruction);
       if (attachment) body.set('attachment', attachment);
       const res = await fetch('/api/ai/fix', { method: 'POST', body, signal: controller.signal });
-      const data: AiFixResponse = await res.json();
+      const data = await readAiFixResponse<AiFixResponse>(res, (event) => {
+        setProgress(event);
+        setProgressLog((log) => [...log.slice(-49), event.label]);
+      });
       // A request-level failure (bad upload, missing instruction) never even
       // started the agent — there's no partial result, just show the error.
       // But when the agent DID run and stopped early (e.g. ran out of turns
@@ -224,11 +238,41 @@ export const AiFixModal: React.FC<AiFixModalProps> = ({ isOpen, onClose }) => {
           )}
 
           {step === 'running' && (
-            <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-500">
+            <div className="flex min-h-64 flex-col items-center justify-center gap-4 py-6 text-slate-500">
               <Loader2 className="w-8 h-8 animate-spin text-cyan-600" />
-              <p className="text-sm">
-                Editing and validating{elapsedSec >= 3 ? ` — ${elapsedSec}s elapsed` : '…'}
+              <p className="text-center text-sm">
+                {progress?.label || 'Starting…'}
+                {elapsedSec >= 3 ? ` — ${elapsedSec}s elapsed` : ''}
               </p>
+
+              {progress && (
+                <div className="w-full max-w-sm">
+                  <div className="mb-1 flex justify-between text-[11px] text-slate-400">
+                    <span>Turn {progress.turn} of up to {progress.maxTurns}</span>
+                    <span>{progress.editsApplied} edit(s) applied</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-cyan-500 transition-all"
+                      style={{ width: `${Math.min(100, (progress.turn / progress.maxTurns) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    A bound, not an ETA — it can finish well before the last turn.
+                  </p>
+                </div>
+              )}
+
+              {progressLog.length > 0 && (
+                <div className="max-h-32 w-full max-w-sm overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-2 font-mono text-xs text-slate-500">
+                  {progressLog.map((line, i) => (
+                    <div key={i} className={i === progressLog.length - 1 ? 'font-medium text-slate-700' : ''}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {elapsedSec >= 45 && (
                 <p className="max-w-sm text-center text-xs text-slate-400">
                   Multi-item tickets or long documents can take a few minutes — it&apos;s reading and

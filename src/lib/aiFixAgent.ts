@@ -141,6 +141,22 @@ export interface RunAiFixInput {
   mode?: 'fix' | 'generate';
   /** Overrides DEFAULT_MAX_TURNS — generate-from-a-large-document runs may need more. */
   maxTurns?: number;
+  /**
+   * Fired as the agent works, so the UI can show what's actually happening
+   * instead of an opaque spinner — there's no way to know total time up
+   * front (it depends on document size), but turn count against maxTurns is
+   * a real, known bound.
+   */
+  onProgress?: (event: AiFixProgressEvent) => void;
+}
+
+export interface AiFixProgressEvent {
+  /** Roughly one per model turn (a batch of tool calls/reasoning) */
+  turn: number;
+  maxTurns: number;
+  /** Human-readable description of what just happened, e.g. "Reading source.pdf" or "Edit 4 applied — 0 errors" */
+  label: string;
+  editsApplied: number;
 }
 
 export const runAiFix = async ({
@@ -150,6 +166,7 @@ export const runAiFix = async ({
   attachment,
   mode = 'fix',
   maxTurns = DEFAULT_MAX_TURNS,
+  onProgress,
 }: RunAiFixInput): Promise<AiFixResult> => {
   const originalXml = xml;
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'formforge-aifix-'));
@@ -184,6 +201,8 @@ You must NEVER present a guess as a certainty. Whenever you are not fully sure a
 
 When every item has been addressed, produce your final answer in the required structured format: "summary" (plain text — exactly what you changed/created and why, item by item, including anything you could not do and why) and "uncertainties" (see above). Make no further tool calls once you produce this final answer.`;
 
+    let turnCount = 0;
+
     const q = query({
       prompt: userPrompt,
       options: {
@@ -207,15 +226,26 @@ When every item has been addressed, produce your final answer in the required st
                     edits.push({ oldString: toolInput.old_string, newString: toolInput.new_string });
                   }
                   let additionalContext: string;
+                  let issueCount = 0;
                   try {
                     const currentXml = await fs.readFile(filePath, 'utf-8');
                     const parsed = parseAnyXML(currentXml);
-                    additionalContext = parsed
-                      ? summarizeValidation(validateForm(parsed))
-                      : 'The file is no longer well-formed, parseable XML after that edit. Fix the XML structure before continuing.';
+                    if (parsed) {
+                      const issues = validateForm(parsed);
+                      issueCount = issues.filter((i) => i.type === 'error').length;
+                      additionalContext = summarizeValidation(issues);
+                    } else {
+                      additionalContext = 'The file is no longer well-formed, parseable XML after that edit. Fix the XML structure before continuing.';
+                    }
                   } catch (err) {
                     additionalContext = `Could not re-read the file after the edit: ${err instanceof Error ? err.message : String(err)}`;
                   }
+                  onProgress?.({
+                    turn: turnCount,
+                    maxTurns,
+                    label: `Edit ${edits.length} applied — ${issueCount === 0 ? '0 errors' : `${issueCount} error(s)`}`,
+                    editsApplied: edits.length,
+                  });
                   return {
                     hookSpecificOutput: {
                       hookEventName: 'PostToolUse' as const,
@@ -235,6 +265,20 @@ When every item has been addressed, produce your final answer in the required st
     let ok = true;
     let errorMsg: string | undefined;
     for await (const message of q) {
+      if (message.type === 'assistant') {
+        turnCount++;
+        for (const block of message.message.content) {
+          if (block.type !== 'tool_use') continue;
+          const input = block.input as { file_path?: string } | undefined;
+          const label =
+            block.name === 'Read'
+              ? `Reading ${input?.file_path ? path.basename(input.file_path) : 'file'}`
+              : block.name === 'Edit'
+                ? 'Applying an edit…'
+                : `Using ${block.name}`;
+          onProgress?.({ turn: turnCount, maxTurns, label, editsApplied: edits.length });
+        }
+      }
       if (message.type === 'result') {
         if (message.subtype === 'success') {
           if (isStructuredAgentOutput(message.structured_output)) {
@@ -254,56 +298,87 @@ When every item has been addressed, produce your final answer in the required st
       }
     }
 
-    const currentXml = await fs.readFile(filePath, 'utf-8');
-    const finalParsed = parseAnyXML(currentXml);
-    const parseOk = finalParsed !== null;
-    let finalIssues: ValidationError[] = [];
-    let roundtripOk = false;
-    let roundtripDiffs: Diff[] = [];
-
-    if (finalParsed) {
-      finalIssues = validateForm(finalParsed);
-      const rebuilt = buildAnyXML(finalParsed);
-      roundtripDiffs = diffXML(currentXml, rebuilt);
-      roundtripOk = roundtripDiffs.length === 0;
-    }
-
-    const scopeDiffText = await gitStyleDiff(originalXml, currentXml, { old: 'original.xml', new: 'ai-proposed.xml' });
-    const semanticScopeDiff = diffXML(originalXml, currentXml);
-
-    return {
-      ok,
-      error: errorMsg,
-      finalXml: currentXml,
-      summary: summary || '(the model made no changes)',
-      uncertainties,
-      edits,
-      scopeDiffText,
-      semanticScopeDiff,
-      finalValidation: {
-        errors: finalIssues.filter((i) => i.type === 'error'),
-        warnings: finalIssues.filter((i) => i.type === 'warning'),
-      },
-      roundtripOk,
-      roundtripDiffs,
-      parseOk,
-    };
+    return await buildResult({ originalXml, filePath, edits, ok, error: errorMsg, summary, uncertainties });
   } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-      finalXml: originalXml,
-      summary: '',
-      uncertainties: [],
-      edits,
-      scopeDiffText: '',
-      semanticScopeDiff: [],
-      finalValidation: { errors: [], warnings: [] },
-      roundtripOk: false,
-      roundtripDiffs: [],
-      parseOk: false,
-    };
+    // The agent loop itself threw (e.g. the SDK gave up retrying structured
+    // output) — but any edits already applied are still sitting in the temp
+    // file on disk. Losing sight of that here would silently discard real,
+    // already-validated progress (`edits` already has them) and report "no
+    // changes" purely because of a late, unrelated failure. Best-effort
+    // re-read the file before falling back to the pristine original.
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    try {
+      return await buildResult({ originalXml, filePath, edits, ok: false, error: errorMsg, summary: '', uncertainties: [] });
+    } catch {
+      return {
+        ok: false,
+        error: errorMsg,
+        finalXml: originalXml,
+        summary: '',
+        uncertainties: [],
+        edits,
+        scopeDiffText: '',
+        semanticScopeDiff: [],
+        finalValidation: { errors: [], warnings: [] },
+        roundtripOk: false,
+        roundtripDiffs: [],
+        parseOk: false,
+      };
+    }
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+};
+
+const buildResult = async ({
+  originalXml,
+  filePath,
+  edits,
+  ok,
+  error,
+  summary,
+  uncertainties,
+}: {
+  originalXml: string;
+  filePath: string;
+  edits: EditAttempt[];
+  ok: boolean;
+  error?: string;
+  summary: string;
+  uncertainties: string[];
+}): Promise<AiFixResult> => {
+  const currentXml = await fs.readFile(filePath, 'utf-8');
+  const finalParsed = parseAnyXML(currentXml);
+  const parseOk = finalParsed !== null;
+  let finalIssues: ValidationError[] = [];
+  let roundtripOk = false;
+  let roundtripDiffs: Diff[] = [];
+
+  if (finalParsed) {
+    finalIssues = validateForm(finalParsed);
+    const rebuilt = buildAnyXML(finalParsed);
+    roundtripDiffs = diffXML(currentXml, rebuilt);
+    roundtripOk = roundtripDiffs.length === 0;
+  }
+
+  const scopeDiffText = await gitStyleDiff(originalXml, currentXml, { old: 'original.xml', new: 'ai-proposed.xml' });
+  const semanticScopeDiff = diffXML(originalXml, currentXml);
+
+  return {
+    ok,
+    error,
+    finalXml: currentXml,
+    summary: summary || '(the model made no changes)',
+    uncertainties,
+    edits,
+    scopeDiffText,
+    semanticScopeDiff,
+    finalValidation: {
+      errors: finalIssues.filter((i) => i.type === 'error'),
+      warnings: finalIssues.filter((i) => i.type === 'warning'),
+    },
+    roundtripOk,
+    roundtripDiffs,
+    parseOk,
+  };
 };

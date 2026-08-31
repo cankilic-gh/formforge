@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runAiFix } from '@/lib/aiFixAgent';
+import { runAiFix, AiFixProgressEvent } from '@/lib/aiFixAgent';
 import { detectAttachmentKind, extractDocxText, UNSUPPORTED_ATTACHMENT_MESSAGE } from '@/lib/docExtract';
 
 export const dynamic = 'force-dynamic';
@@ -77,19 +77,39 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  try {
-    const result = await runAiFix({
-      xml,
-      instruction: effectiveInstruction,
-      model: process.env.AI_FIX_MODEL,
-      attachment: pdfAttachment,
-      mode,
-    });
-    return NextResponse.json(result);
-  } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 200 }
-    );
-  }
+  // Streamed as SSE rather than a single JSON response: a full-document
+  // generate run can take 15-30+ minutes, and with no other signal the
+  // client has nothing to show but an opaque elapsed-time counter. Each
+  // `onProgress` call becomes one "data: {...}\n\n" event; the last event
+  // (type: 'result') carries the same AiFixResult shape the client used to
+  // get back directly from the JSON response.
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (payload: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      try {
+        const result = await runAiFix({
+          xml,
+          instruction: effectiveInstruction,
+          model: process.env.AI_FIX_MODEL,
+          attachment: pdfAttachment,
+          mode,
+          onProgress: (event: AiFixProgressEvent) => send({ type: 'progress', ...event }),
+        });
+        send({ type: 'result', ...result });
+      } catch (err) {
+        send({ type: 'result', ok: false, error: err instanceof Error ? err.message : String(err) });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    },
+  });
 }

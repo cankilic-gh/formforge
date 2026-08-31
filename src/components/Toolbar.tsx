@@ -467,7 +467,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick, onAiFixClick 
         <ToolbarGroup label="Tools">
           <ToolbarButton
             icon={Wand2}
-            label="Generate"
+            label="AI Generate"
             onClick={onGenerateClick || (() => {})}
             disabled={!form}
           />
