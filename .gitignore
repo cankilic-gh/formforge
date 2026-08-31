@@ -37,3 +37,6 @@ coverage/
 
 # Local test specimens (real E-Bar form XMLs copied from ILG-EBAS-E-Bar for the Test Lab)
 public/specimens/
+
+# Claude Desktop attachment scratch
+.hermes/

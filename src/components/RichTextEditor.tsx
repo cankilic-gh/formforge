@@ -19,6 +19,36 @@ const ensureParagraphs = (html: string): string => {
   return `<p>${html}</p>`;
 };
 
+// Resolve the anchor the caret/selection is actually in. Walking up only from
+// anchorNode.parentElement misses the common cases: the node is the editor
+// itself, the caret sits on an anchor boundary, the anchor is nested inside
+// <strong>/<li>, or the selection spans (rather than sits inside) the anchor.
+const closestAnchor = (node: Node | null | undefined): HTMLAnchorElement | null => {
+  if (!node) return null;
+  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element);
+  return el?.closest?.('a') ?? null;
+};
+
+const findAnchorInSelection = (): HTMLAnchorElement | null => {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+
+  const direct = closestAnchor(sel.anchorNode) || closestAnchor(sel.focusNode);
+  if (direct) return direct;
+
+  const range = sel.getRangeAt(0);
+  const ancestor = closestAnchor(range.commonAncestorContainer);
+  if (ancestor) return ancestor;
+
+  // Selection spans an anchor rather than sitting inside one
+  const container = range.commonAncestorContainer;
+  const scope = container.nodeType === Node.TEXT_NODE ? container.parentElement : (container as Element);
+  for (const a of Array.from(scope?.querySelectorAll('a') ?? [])) {
+    if (range.intersectsNode(a)) return a as HTMLAnchorElement;
+  }
+  return null;
+};
+
 export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeholder, className }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalChange = useRef(false);
@@ -26,6 +56,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
   const [showLinkPopover, setShowLinkPopover] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkBlank, setLinkBlank] = useState(false);
+  const [linkError, setLinkError] = useState('');
   const [codeView, setCodeView] = useState(false);
   const codeRef = useRef<HTMLTextAreaElement>(null);
 
@@ -91,8 +122,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
 
   const openLinkPopover = useCallback(() => {
     saveSelection();
-    const sel = window.getSelection();
-    const anchor = sel?.anchorNode?.parentElement?.closest('a');
+    const anchor = findAnchorInSelection();
     if (anchor) {
       setLinkUrl(anchor.getAttribute('href') || '');
       setLinkBlank(anchor.getAttribute('target') === '_blank');
@@ -100,25 +130,31 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
       setLinkUrl('');
       setLinkBlank(false);
     }
+    setLinkError('');
     setShowLinkPopover(true);
   }, [saveSelection]);
 
   const insertLink = useCallback(() => {
     restoreSelection();
+    // An empty URL is never an implicit unlink: silently dropping an existing
+    // anchor here destroyed links the editor could not even see. Removing a
+    // link stays exclusively on the explicit Remove button.
     if (!linkUrl) {
-      document.execCommand('unlink', false);
-    } else {
-      document.execCommand('createLink', false, linkUrl);
+      setLinkError('Enter a URL, or use Remove to delete the link.');
+      return;
+    }
+    document.execCommand('createLink', false, linkUrl);
+    const anchor = findAnchorInSelection();
+    if (anchor) {
       if (linkBlank) {
-        const sel = window.getSelection();
-        const anchor = sel?.anchorNode?.parentElement?.closest('a') ||
-          sel?.focusNode?.parentElement?.closest('a');
-        if (anchor) {
-          anchor.setAttribute('target', '_blank');
-          anchor.setAttribute('rel', 'noopener noreferrer');
-        }
+        anchor.setAttribute('target', '_blank');
+        anchor.setAttribute('rel', 'noopener noreferrer');
+      } else {
+        anchor.removeAttribute('target');
+        anchor.removeAttribute('rel');
       }
     }
+    setLinkError('');
     setShowLinkPopover(false);
     editorRef.current?.focus();
     handleInput();
@@ -127,6 +163,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
   const removeLink = useCallback(() => {
     restoreSelection();
     document.execCommand('unlink', false);
+    setLinkError('');
     setShowLinkPopover(false);
     editorRef.current?.focus();
     handleInput();
@@ -188,12 +225,13 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
           <input
             type="url"
             value={linkUrl}
-            onChange={(e) => setLinkUrl(e.target.value)}
+            onChange={(e) => { setLinkUrl(e.target.value); if (linkError) setLinkError(''); }}
             placeholder="https://..."
             className="w-full text-xs"
             autoFocus
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); insertLink(); } }}
           />
+          {linkError && <p className="text-[11px] text-red-500">{linkError}</p>}
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer select-none">
               <input
@@ -234,7 +272,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange,
         onInput={handleInput}
         onPaste={handlePaste}
         data-placeholder={placeholder}
-        className={`w-full min-h-[5rem] border border-slate-200 px-3 py-2 text-sm text-slate-800 break-words overflow-hidden focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 ${codeView ? 'hidden' : 'rounded-b-lg'}`}
+        className={`w-full min-h-[5rem] border border-slate-200 px-3 py-2 text-sm text-slate-800 break-words overflow-hidden focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 [&_a]:text-cyan-600 [&_a]:underline [&_a]:decoration-cyan-600/40 [&_a]:underline-offset-2 ${codeView ? 'hidden' : 'rounded-b-lg'}`}
         style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
       />
     </div>

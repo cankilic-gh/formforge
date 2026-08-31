@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<questionnaire id="14019009" nextid="200" suffix="19009" title="UBE Score Transfer Application">
+    <section id="14119009" title="Scores">
+        <subsection id="14219009" title="UBE Transfer Score">
+            <conditionlogic id="14319009" operator="or">
+                <condition id="14419009" value="Yes" questionid="14519009" equals="true"/>
+            </conditionlogic>
+            <question id="14519009" type="radio" required="true" format="" triggervalue="" comment="">
+                <description id="14619009" prefix=""><![CDATA[Are you transferring a UBE score?]]></description>
+                <option id="14719009" value="Yes"><![CDATA[Yes]]></option>
+                <option id="14819009" value="No"><![CDATA[No]]></option>
+            </question>
+            <conditional id="14919009" condition="true">
+                <description id="15019009" prefix=""><![CDATA[You must request an official UBE score transcript from NCBE. Instructions for submitting a request through NCBE can be found on the <a href="https://www.ncbex.org/exams/ube" target="_blank">National Conference of Bar Examiners</a> website.]]></description>
+            </conditional>
+            <question id="15819009" type="char" required="" format="" triggervalue="" comment="">
+                <description id="15919009" prefix=""><![CDATA[<p>To request NCBE to send a score report, or to register to take the next scheduled MPRE <a href="https://ncbex.org/exams/mpre/registration/" target="_blank">click here</a>.</p>]]></description>
+            </question>
+        </subsection>
+    </section>
+</questionnaire>
