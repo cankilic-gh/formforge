@@ -21,6 +21,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useFormStore } from '@/stores/formStore';
 import { useModal } from '@/components/Modal';
+import { extractHrefs } from '@/lib/linkUtils';
 import { FormNode, FormQuestion, FormEntity, FormConditionSet, FormConditionLogic, FormSection, FormSubSection, FormSubform, PROFILE_REFERENCE_FIELDS } from '@/types/form';
 import {
   ChevronRight,
@@ -45,6 +46,7 @@ import {
   FileInput,
   FileCheck,
   Clipboard,
+  Link as LinkIcon,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────
@@ -77,6 +79,20 @@ const stripHtml = (html: string): string => {
   if (!html) return '';
   return html.replace(/<[^>]*>/g, '');
 };
+
+// Anchors are real content in E-Bar forms, but the tree label is plain text -
+// so surface them as a badge instead of letting stripHtml erase them silently.
+// Small chain badge marking a node whose text contains link(s); the hrefs
+// themselves live in the tooltip so they are verifiable without opening the node.
+const LinkBadge: React.FC<{ hrefs: string[] }> = ({ hrefs }) => (
+  <span
+    title={`${hrefs.length} link${hrefs.length > 1 ? 's' : ''}:\n${hrefs.join('\n')}`}
+    className="ml-1 inline-flex items-center gap-0.5 align-middle rounded bg-cyan-50 px-1 text-[9px] font-medium text-cyan-700 ring-1 ring-cyan-200"
+  >
+    <LinkIcon className="w-2.5 h-2.5" />
+    {hrefs.length > 1 && hrefs.length}
+  </span>
+);
 
 const HIDDEN_TYPES = ['option', 'reference', 'answer'];
 
@@ -341,6 +357,9 @@ const SortableTreeNode: React.FC<TreeNodeProps> = ({ node, depth, parentId, drop
               : isSelected ? 'text-slate-900 font-medium' : 'text-slate-700'
           }`}>
             {stripHtml(getNodeLabel(node))}
+            {extractHrefs(getNodeLabel(node)).length > 0 && (
+              <LinkBadge hrefs={extractHrefs(getNodeLabel(node))} />
+            )}
           </span>
           {getReferenceLabel(node) && (
             <span className="block text-[10px] text-indigo-500">{getReferenceLabel(node)}</span>

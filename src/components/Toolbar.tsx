@@ -427,15 +427,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick, onAiFixClick 
 
   return (
     <header className="border-b border-slate-200 bg-white shadow-sm">
-      {/* Main toolbar */}
-      <div className="h-12 flex items-center px-2 gap-1">
+      {/* Main toolbar - each column owns both its icon row and its label cell */}
+      <div className="flex items-stretch px-2 gap-1">
         {/* Logo - matches sidebar width (w-56 = 224px) */}
-        <div className="w-56 flex items-center gap-2 px-3 border-r border-slate-200">
-          <Hammer className="w-5 h-5 text-cyan-600" />
-          <div className="flex flex-col">
-            <span className="font-bold text-slate-800 text-sm tracking-wide leading-none">FormForge</span>
-            <LastUpdated />
+        <div className="w-56 flex flex-col border-r border-slate-200">
+          <div className="h-12 flex items-center gap-2 px-3">
+            <Hammer className="w-5 h-5 text-cyan-600" />
+            <div className="flex flex-col">
+              <span className="font-bold text-slate-800 text-sm tracking-wide leading-none">FormForge</span>
+              <LastUpdated />
+            </div>
           </div>
+          <div className="h-5 bg-slate-50 border-t border-slate-100" />
         </div>
 
         {/* File Management */}
@@ -448,7 +451,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick, onAiFixClick 
           <ToolbarButton icon={X} label="Close" onClick={handleClose} disabled={!form} />
         </ToolbarGroup>
 
-        <div className="w-px h-6 bg-slate-200 mx-1" />
+        <ToolbarSeparator />
 
         {/* Edit */}
         <ToolbarGroup label="Edit">
@@ -461,10 +464,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick, onAiFixClick 
           <ToolbarButton icon={Hash} label="Regenerate Id's" onClick={handleRegenerateIds} disabled={!form} />
         </ToolbarGroup>
 
-        <div className="w-px h-6 bg-slate-200 mx-1" />
+        <ToolbarSeparator />
 
         {/* Tools */}
-        <ToolbarGroup label="Tools">
+        <ToolbarGroup label="Tools" labelClassName="text-cyan-600 font-medium">
           <ToolbarButton
             icon={Wand2}
             label="Generate"
@@ -479,8 +482,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick, onAiFixClick 
           />
         </ToolbarGroup>
 
-        {/* Spacer */}
-        <div className="flex-1" />
+        {/* Spacer - keeps the label strip unbroken across the gap */}
+        <div className="flex-1 flex flex-col">
+          <div className="h-12" />
+          <div className="h-5 bg-slate-50 border-t border-slate-100" />
+        </div>
 
         {/* View */}
         <ToolbarGroup label="View">
@@ -547,23 +553,30 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onGenerateClick, onAiFixClick 
         </div>
       )}
 
-      {/* Section labels */}
-      <div className="h-5 flex items-center px-2 text-[10px] text-slate-400 border-t border-slate-100 bg-slate-50">
-        <div className="w-56" /> {/* Logo space - matches sidebar width */}
-        <span className="px-2">File Management</span>
-        <span className="px-8">Edit</span>
-        <span className="px-2 text-cyan-600 font-medium">Tools</span>
-        <div className="flex-1" />
-        <span className="px-2">View</span>
-      </div>
     </header>
   );
 };
 
 // Toolbar Group
-const ToolbarGroup: React.FC<{ label: string; children: React.ReactNode }> = ({ children }) => (
-  <div className="flex items-center gap-0.5">
-    {children}
+// Toolbar Group — flex-col so the label is structurally coupled to its icon row
+const ToolbarGroup: React.FC<{ label: string; labelClassName?: string; children: React.ReactNode }> = ({ label, labelClassName, children }) => (
+  <div className="flex flex-col">
+    <div className="h-12 flex items-center gap-0.5">
+      {children}
+    </div>
+    <div className={`h-5 flex items-center justify-center bg-slate-50 border-t border-slate-100 text-[10px] ${labelClassName ?? 'text-slate-400'}`}>
+      <span>{label}</span>
+    </div>
+  </div>
+);
+
+// Toolbar Separator — two-row column matching ToolbarGroup height
+const ToolbarSeparator: React.FC = () => (
+  <div className="flex flex-col">
+    <div className="h-12 flex items-center px-1">
+      <div className="w-px h-6 bg-slate-200" />
+    </div>
+    <div className="h-5 bg-slate-50 border-t border-slate-100 px-1" />
   </div>
 );
 
